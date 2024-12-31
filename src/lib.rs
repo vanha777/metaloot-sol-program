@@ -1,4 +1,3 @@
-
 // use borsh::{BorshDeserialize, BorshSerialize};
 // use solana_program::{
 //     account_info::{next_account_info, AccountInfo},
@@ -50,16 +49,18 @@
 // }
 
 use borsh::{BorshDeserialize, BorshSerialize};
+use mpl_token_metadata::generated::{
+    instructions::{CreateMetadataAccountV3, CreateMetadataAccountV3InstructionArgs},
+    types::{Creator, DataV2},
+};
 use solana_program::{
     account_info::{next_account_info, AccountInfo},
     entrypoint,
     entrypoint::ProgramResult,
     msg,
-    program::invoke_signed,
+    program::invoke,
     program_error::ProgramError,
-    program_pack::IsInitialized,
     pubkey::Pubkey,
-    rent::Rent,
     system_instruction,
     sysvar::Sysvar,
 };
@@ -70,36 +71,20 @@ use solana_program::{
 #[derive(BorshSerialize, BorshDeserialize, Debug)]
 pub enum RegistryInstruction {
     /// Initialize the registry account (and set admin).
-    /// Args: (publisher_name, publisher_logo, published_date, genre, native_token,
-    ///        collection_symbol, collection_name, collection_description, collection_image,
-    ///        time_played, other)
     InitializeRegistry {
-        publisher_name: String,
-        publisher_logo: String,
-        published_date: String,
-        genre: String,
-        native_token: String,
-        collection_symbol: String,
-        collection_name: String,
-        collection_description: String,
-        collection_image: String,
-        time_played: String,
-        other: Option<String>,
+        // No additional fields needed; admin is the signer
     },
 
-    /// Update the registry account fields (only admin can do this).
-    /// Each field is Option<String>, so you only update what's Some(...)
-    UpdateRegistry {
-        new_publisher_name: Option<String>,
-        new_publisher_logo: Option<String>,
-        new_genre: Option<String>,
-        new_native_token: Option<String>,
-        new_collection_symbol: Option<String>,
-        new_collection_name: Option<String>,
-        new_collection_description: Option<String>,
-        new_collection_image: Option<String>,
-        new_time_played: Option<String>,
-        new_other: Option<String>,
+    /// Create a new game studio NFT and register it.
+    CreateGameStudio {
+        name: String,   // Name of the game studio
+        symbol: String, // Symbol for the NFT
+        uri: String,    // URI pointing to off-chain JSON metadata
+    },
+
+    /// Update an existing game studio NFT's metadata.
+    UpdateGameStudio {
+        new_uri: Option<String>, // New URI for updated metadata
     },
 }
 
@@ -108,103 +93,38 @@ pub enum RegistryInstruction {
 // ----------------------------------------------------------
 #[derive(BorshSerialize, BorshDeserialize, Debug, Default)]
 pub struct RegistryData {
-    pub is_initialized: bool,   // Flag to check if we've init'd
-    pub admin: Pubkey,          // Admin who can update
-
-    // Fields we store:
-    pub publisher_name: String,
-    pub publisher_logo: String,
-    pub published_date: String,
-    pub genre: String,
-    pub native_token: String,
-    pub collection_symbol: String,
-    pub collection_name: String,
-    pub collection_description: String,
-    pub collection_image: String,
-    pub time_played: String,
-    pub other: Option<String>,
-}
-
-// We can add a trait for easy "is_initialized" checking
-impl IsInitialized for RegistryData {
-    fn is_initialized(&self) -> bool {
-        self.is_initialized
-    }
+    pub is_initialized: bool, // Flag to check if the registry is initialized
+    pub admin: Pubkey,        // Admin authority
+    pub game_studios: Vec<Pubkey>, // List of game studio Mint Pubkeys (NFTs)
 }
 
 // ----------------------------------------------------------
 // 3) Entrypoint
 // ----------------------------------------------------------
-#[cfg(not(feature = "no-entrypoint"))]
 entrypoint!(process_instruction);
 pub fn process_instruction(
-    program_id: &Pubkey,
-    accounts: &[AccountInfo],
-    instruction_data: &[u8],
+    program_id: &Pubkey,      // Public key of the account the program was loaded into
+    accounts: &[AccountInfo], // Accounts involved in the instruction
+    instruction_data: &[u8],  // Serialized instruction data
 ) -> ProgramResult {
     // Deserialize the incoming instruction
     let instruction = RegistryInstruction::try_from_slice(instruction_data)
         .map_err(|_| ProgramError::InvalidInstructionData)?;
 
     match instruction {
-        RegistryInstruction::InitializeRegistry {
-            publisher_name,
-            publisher_logo,
-            published_date,
-            genre,
-            native_token,
-            collection_symbol,
-            collection_name,
-            collection_description,
-            collection_image,
-            time_played,
-            other,
-        } => {
+        RegistryInstruction::InitializeRegistry {} => {
             msg!("Instruction: InitializeRegistry");
-            initialize_registry(
-                program_id,
-                accounts,
-                publisher_name,
-                publisher_logo,
-                published_date,
-                genre,
-                native_token,
-                collection_symbol,
-                collection_name,
-                collection_description,
-                collection_image,
-                time_played,
-                other,
-            )
+            initialize_registry(program_id, accounts)
         }
 
-        RegistryInstruction::UpdateRegistry {
-            new_publisher_name,
-            new_publisher_logo,
-            new_genre,
-            new_native_token,
-            new_collection_symbol,
-            new_collection_name,
-            new_collection_description,
-            new_collection_image,
-            new_time_played,
-            new_other,
-        } => {
-            msg!("Instruction: UpdateRegistry");
-            update_registry(
-                program_id,
-                accounts,
-                new_publisher_name,
-                new_publisher_logo,
-                new_genre,
-                new_native_token,
-                new_collection_symbol,
-                new_collection_name,
-                new_collection_description,
-                new_collection_image,
-                new_time_played,
-                new_other,
-            )
+        RegistryInstruction::CreateGameStudio { name, symbol, uri } => {
+            msg!("Instruction: CreateGameStudio");
+            create_game_studio(program_id, accounts, name, symbol, uri)
+        }
+
+        RegistryInstruction::UpdateGameStudio { new_uri } => {
+            msg!("Instruction: UpdateGameStudio");
+            update_game_studio(program_id, accounts, new_uri)
         }
     }
 }
@@ -212,179 +132,218 @@ pub fn process_instruction(
 // ----------------------------------------------------------
 // 4) InitializeRegistry Processor
 // ----------------------------------------------------------
-#[allow(clippy::too_many_arguments)]
-pub fn initialize_registry(
-    program_id: &Pubkey,
-    accounts: &[AccountInfo],
-    publisher_name: String,
-    publisher_logo: String,
-    published_date: String,
-    genre: String,
-    native_token: String,
-    collection_symbol: String,
-    collection_name: String,
-    collection_description: String,
-    collection_image: String,
-    time_played: String,
-    other: Option<String>,
-) -> ProgramResult {
+pub fn initialize_registry(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
     let account_info_iter = &mut accounts.iter();
 
-    // registry_account - where data will be stored
+    // 1. Registry account (PDA)
     let registry_account = next_account_info(account_info_iter)?;
-    // payer_account - pays for creation, also becomes admin
-    let payer_account = next_account_info(account_info_iter)?;
-    // system_program
+
+    // 2. Admin account (must be signer)
+    let admin_account = next_account_info(account_info_iter)?;
+
+    // 3. System program
     let system_program = next_account_info(account_info_iter)?;
 
-    // The payer must sign
-    if !payer_account.is_signer {
+    // Verify that the admin is a signer
+    if !admin_account.is_signer {
+        msg!("Admin must be a signer");
         return Err(ProgramError::MissingRequiredSignature);
     }
 
-    // If the registry_account isn't owned by our program, we create it
-    // (If it's already owned, it might be re-initializing)
-    if registry_account.owner != program_id {
-        // Space for our RegistryData
-        // Adjust this carefully based on expected max string lengths
-        let space: u64 = 2048;
-        let rent_exemption = Rent::get()?.minimum_balance(space as usize);
+    // Check if the registry account is already initialized
+    let mut registry_data = if registry_account.data.borrow().iter().all(|&x| x == 0) {
+        // Account is uninitialized; initialize it
+        RegistryData::default()
+    } else {
+        // Deserialize existing data
+        RegistryData::try_from_slice(&registry_account.data.borrow())
+            .map_err(|_| ProgramError::InvalidAccountData)?
+    };
 
-        invoke_signed(
-            &system_instruction::create_account(
-                payer_account.key,
-                registry_account.key,
-                rent_exemption,
-                space,
-                program_id,
-            ),
-            &[
-                payer_account.clone(),
-                registry_account.clone(),
-                system_program.clone(),
-            ],
-            &[],
-        )?;
-    }
-
-    // Deserialize existing data (or default if newly created)
-    let mut registry_data: RegistryData =
-        RegistryData::try_from_slice(&registry_account.data.borrow())?;
-
-    // Check if already initialized
-    if registry_data.is_initialized() {
-        msg!("Registry account already initialized!");
+    if registry_data.is_initialized {
+        msg!("Registry account is already initialized");
         return Err(ProgramError::AccountAlreadyInitialized);
     }
 
-    // Populate fields
+    // Set initial data
     registry_data.is_initialized = true;
-    registry_data.admin = *payer_account.key;
-    registry_data.publisher_name = publisher_name;
-    registry_data.publisher_logo = publisher_logo;
-    registry_data.published_date = published_date;
-    registry_data.genre = genre;
-    registry_data.native_token = native_token;
-    registry_data.collection_symbol = collection_symbol;
-    registry_data.collection_name = collection_name;
-    registry_data.collection_description = collection_description;
-    registry_data.collection_image = collection_image;
-    registry_data.time_played = time_played;
-    registry_data.other = other;
+    registry_data.admin = *admin_account.key;
+    registry_data.game_studios = Vec::new();
 
-    // Save data back to account
-    registry_data
-        .serialize(&mut &mut registry_account.data.borrow_mut()[..])?;
+    // Serialize the data back into the account
+    registry_data.serialize(&mut &mut registry_account.data.borrow_mut()[..])?;
 
-    msg!("Registry initialized successfully!");
+    msg!("Registry initialized successfully");
     Ok(())
 }
 
 // ----------------------------------------------------------
-// 5) UpdateRegistry Processor
+// 5) CreateGameStudio Processor
 // ----------------------------------------------------------
-#[allow(clippy::too_many_arguments)]
-pub fn update_registry(
+pub fn create_game_studio(
     program_id: &Pubkey,
     accounts: &[AccountInfo],
-    new_publisher_name: Option<String>,
-    new_publisher_logo: Option<String>,
-    new_genre: Option<String>,
-    new_native_token: Option<String>,
-    new_collection_symbol: Option<String>,
-    new_collection_name: Option<String>,
-    new_collection_description: Option<String>,
-    new_collection_image: Option<String>,
-    new_time_played: Option<String>,
-    new_other: Option<String>,
+    name: String,
+    symbol: String,
+    uri: String,
 ) -> ProgramResult {
     let account_info_iter = &mut accounts.iter();
 
-    // registry_account to update
+    // Get required accounts
+    let metadata_account = next_account_info(account_info_iter)?;
+    let mint_account = next_account_info(account_info_iter)?;
+    let payer_account = next_account_info(account_info_iter)?;
+    let system_program = next_account_info(account_info_iter)?;
+    let rent_sysvar = next_account_info(account_info_iter)?;
+
+    // Create metadata args
+    let metadata_args = CreateMetadataAccountV3InstructionArgs {
+        data: DataV2 {
+            name,
+            symbol,
+            uri,
+            seller_fee_basis_points: 0,
+            creators: Some(vec![Creator {
+                address: *payer_account.key,
+                verified: true,
+                share: 100,
+            }]),
+            collection: None,
+            uses: None,
+        },
+        is_mutable: true,
+        collection_details: None,
+    };
+
+    // Create metadata instruction
+    let create_metadata_ix = CreateMetadataAccountV3 {
+        metadata: *metadata_account.key,
+        mint: *mint_account.key,
+        mint_authority: *payer_account.key,
+        payer: *payer_account.key,
+        update_authority: (*payer_account.key, true),
+        system_program: solana_program::system_program::id(),
+        rent: Some(solana_program::sysvar::rent::id()),
+    }
+    .instruction(metadata_args);
+
+    // Invoke the instruction
+    invoke(
+        &create_metadata_ix,
+        &[
+            metadata_account.clone(),
+            mint_account.clone(),
+            payer_account.clone(),
+            system_program.clone(),
+            rent_sysvar.clone(),
+        ],
+    )?;
+
+    msg!("Metadata account created successfully");
+    Ok(())
+}
+
+// ----------------------------------------------------------
+// 6) UpdateGameStudio Processor
+// ----------------------------------------------------------
+pub fn update_game_studio(
+    program_id: &Pubkey,
+    accounts: &[AccountInfo],
+    new_uri: Option<String>,
+) -> ProgramResult {
+    // Create an iterator over the accounts
+    let account_info_iter = &mut accounts.iter();
+
+    // 1. Registry account (PDA)
     let registry_account = next_account_info(account_info_iter)?;
-    // The admin must be the signer
-    let signer_account = next_account_info(account_info_iter)?;
 
-    // Ensure registry_account is owned by this program
-    if registry_account.owner != program_id {
-        msg!("Registry account not owned by this program.");
-        return Err(ProgramError::IncorrectProgramId);
-    }
+    // 2. Admin account (must be signer)
+    let admin_account = next_account_info(account_info_iter)?;
 
-    // Deserialize
-    let mut registry_data: RegistryData =
-        RegistryData::try_from_slice(&registry_account.data.borrow())?;
+    // 3. Mint account (game studio NFT)
+    let mint_account = next_account_info(account_info_iter)?;
 
-    if !registry_data.is_initialized() {
-        msg!("Registry account is not initialized.");
-        return Err(ProgramError::UninitializedAccount);
-    }
+    // 4. Metadata account
+    let metadata_account = next_account_info(account_info_iter)?;
 
-    // Check admin
-    if registry_data.admin != *signer_account.key {
-        msg!("Signer is not the admin!");
-        return Err(ProgramError::IllegalOwner);
-    }
-    if !signer_account.is_signer {
+    // 5. Metadata program
+    let metadata_program = next_account_info(account_info_iter)?;
+
+    // 6. System program
+    let system_program = next_account_info(account_info_iter)?;
+
+    // 7. Rent sysvar
+    let rent_sysvar = next_account_info(account_info_iter)?;
+
+    // **Authentication: Ensure the admin is a signer**
+    if !admin_account.is_signer {
+        msg!("Admin must be a signer to update game studio metadata");
         return Err(ProgramError::MissingRequiredSignature);
     }
 
-    // Update only fields that have Some(...) values
-    if let Some(name) = new_publisher_name {
-        registry_data.publisher_name = name;
-    }
-    if let Some(logo) = new_publisher_logo {
-        registry_data.publisher_logo = logo;
-    }
-    if let Some(g) = new_genre {
-        registry_data.genre = g;
-    }
-    if let Some(token) = new_native_token {
-        registry_data.native_token = token;
-    }
-    if let Some(sym) = new_collection_symbol {
-        registry_data.collection_symbol = sym;
-    }
-    if let Some(cname) = new_collection_name {
-        registry_data.collection_name = cname;
-    }
-    if let Some(cdesc) = new_collection_description {
-        registry_data.collection_description = cdesc;
-    }
-    if let Some(cimage) = new_collection_image {
-        registry_data.collection_image = cimage;
-    }
-    if let Some(tplay) = new_time_played {
-        registry_data.time_played = tplay;
-    }
-    if let Some(oth) = new_other {
-        registry_data.other = Some(oth);
+    // **Verify that the mint account is registered in the registry**
+    let mut registry_data = RegistryData::try_from_slice(&registry_account.data.borrow())
+        .map_err(|_| ProgramError::InvalidAccountData)?;
+
+    if !registry_data.game_studios.contains(mint_account.key) {
+        msg!("The provided mint account is not registered as a game studio");
+        return Err(ProgramError::InvalidArgument);
     }
 
-    // Write updated data back
-    registry_data
-        .serialize(&mut &mut registry_account.data.borrow_mut()[..])?;
+    // **Derive the Metadata PDA**
+    let (expected_metadata_pda, _) = Pubkey::find_program_address(
+        &[
+            b"metadata",
+            &mpl_token_metadata::ID.to_bytes(),
+            mint_account.key.as_ref(),
+        ],
+        &mpl_token_metadata::ID,
+    );
 
-    msg!("Registry updated successfully!");
+    if expected_metadata_pda != *metadata_account.key {
+        msg!("Invalid metadata account PDA");
+        return Err(ProgramError::InvalidArgument);
+    }
+    // **Deserialize the existing metadata**
+    let mut metadata = mpl_token_metadata::accounts::Metadata::try_from(metadata_account)
+        .map_err(|_| ProgramError::InvalidAccountData)?;
+
+    // **Update the URI if provided**
+    if let Some(ref uri) = new_uri {
+        metadata.uri = uri.clone();
+    } else {
+        msg!("No new URI provided for update");
+        return Err(ProgramError::InvalidArgument);
+    }
+
+    // Create the update metadata instruction
+    let update_metadata_ix = mpl_token_metadata::instructions::UpdateMetadataAccountV2 {
+        metadata: *metadata_account.key,
+        update_authority: *admin_account.key,
+    }
+    .instruction(
+        mpl_token_metadata::instructions::UpdateMetadataAccountV2InstructionArgs {
+            data: Some(DataV2 {
+                name: metadata.name,
+                symbol: metadata.symbol,
+                uri: new_uri.unwrap_or(metadata.uri),
+                seller_fee_basis_points: metadata.seller_fee_basis_points,
+                creators: metadata.creators,
+                collection: metadata.collection,
+                uses: metadata.uses,
+            }),
+            primary_sale_happened: None,
+            is_mutable: Some(true),
+            new_update_authority: None,
+        },
+    );
+
+    // Invoke the update instruction
+    invoke(
+        &update_metadata_ix,
+        &[metadata_account.clone(), admin_account.clone()],
+    )?;
+
+    msg!("Game Studio metadata updated successfully");
     Ok(())
 }

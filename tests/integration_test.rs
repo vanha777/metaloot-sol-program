@@ -1,141 +1,461 @@
-#![cfg(test)]
+// tests/integration_tests.rs
 
-use {
-    borsh::{BorshDeserialize, BorshSerialize},
-    solana_program_test::*,
-    solana_sdk::{
-        account::Account,
-        instruction::{AccountMeta, Instruction},
-        signature::{Keypair, Signer},
-        transaction::Transaction,
-        pubkey::Pubkey,
-        system_instruction, 
-    },
-    sol_xyz::{RegistryInstruction, RegistryData, process_instruction}, // Import your program's entrypoint and structures
+use solana_program_test::*;
+use solana_sdk::{
+    account::Account,
+    instruction::{AccountMeta, Instruction},
+    pubkey::Pubkey,
+    signature::{Keypair, Signer},
+    transaction::Transaction,
 };
-const PROGRAM_ID: Pubkey = Pubkey::from_str_const("iYwvNhYeLkb6GoUnrquy3QPyU5P3bUoWJqLSzXW4hpL");
+use mpl_token_metadata::generated::{
+    instructions::{CreateMetadataAccountV3, CreateMetadataAccountV3InstructionArgs},
+    types::{Creator, DataV2},
+};
+use solana_program::{
+    program_pack::Pack,
+    sysvar::{rent::Rent, Sysvar},
+};
+use spl_token::state::Mint;
+
+// Import your program's processor and instruction enums
+use sol_xyz::process_instruction; // Replace `your_program` with your crate name
+use sol_xyz ::{RegistryData, RegistryInstruction};
 
 #[tokio::test]
-async fn test_initialize_and_update_registry() {
-    // Step 1: Set up the test environment
-    let mut test = ProgramTest::new(
-        "sol_xyz",       // Symbolic name for your program
-        PROGRAM_ID,         // Actual program ID
-        processor!(process_instruction), // Reference to your entrypoint
-    );
-    test.set_compute_max_units(50_000); // Optional: increase compute budget
-
-    // Step 2: Start the test validator and get banks client
-    let (mut banks_client, payer, recent_blockhash) = test.start().await;
-
-    // Step 3: Create a registry account keypair
-    let registry_account = Keypair::new();
-    let rent_exemption = banks_client
-        .get_rent()
-        .await
-        .unwrap()
-        .minimum_balance(std::mem::size_of::<RegistryData>());
-    let create_registry_account_ix = system_instruction::create_account(
-        &payer.pubkey(),
-        &registry_account.pubkey(),
-        rent_exemption,
-        std::mem::size_of::<RegistryData>() as u64,
-        &PROGRAM_ID,
+async fn test_initialize_registry() {
+    // Initialize the program test environment
+    let program_id = Pubkey::new_unique();
+    let mut program_test = ProgramTest::new(
+        "sol_xyz", // Replace with your program's name
+        program_id,
+        processor!(process_instruction),
     );
 
-    let mut tx = Transaction::new_with_payer(
-        &[create_registry_account_ix],
+    // Start the test environment
+    let (mut banks_client, payer, recent_blockhash) = program_test.start().await;
+
+    // Generate a new keypair for the registry account PDA
+    let registry_seeds = &[b"registry"];
+    let (registry_pda, _registry_bump) = Pubkey::find_program_address(registry_seeds, &program_id);
+
+    // Allocate space for the registry account
+    program_test.add_account(
+        registry_pda,
+        Account {
+            lamports: Rent::default().minimum_balance(RegistryData::LEN),
+            data: vec![0; RegistryData::LEN],
+            owner: program_id,
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
+
+    // Create the InitializeRegistry instruction
+    let initialize_registry_ix = RegistryInstruction::InitializeRegistry {};
+
+    // Serialize the instruction using Borsh
+    let initialize_registry_data = initialize_registry_ix.try_to_vec().unwrap();
+
+    // Define the accounts required for InitializeRegistry
+    let initialize_registry_instruction = Instruction {
+        program_id,
+        accounts: vec![
+            // Registry account (PDA)
+            AccountMeta::new(registry_pda, false),
+            // Admin account (payer)
+            AccountMeta::new(payer.pubkey(), true),
+            // System program
+            AccountMeta::new_readonly(solana_program::system_program::id(), false),
+        ],
+        data: initialize_registry_data,
+    };
+
+    // Create and send the transaction
+    let transaction = Transaction::new_signed_with_payer(
+        &[initialize_registry_instruction],
         Some(&payer.pubkey()),
+        &[&payer],
+        recent_blockhash,
     );
-    tx.sign(&[&payer, &registry_account], recent_blockhash);
-    banks_client.process_transaction(tx).await.unwrap();
 
-    // Step 4: Initialize the registry with sample data
-    let initialize_instruction = RegistryInstruction::InitializeRegistry {
-        publisher_name: "Publisher".to_string(),
-        publisher_logo: "https://example.com/logo.png".to_string(),
-        published_date: "2024-01-01".to_string(),
-        genre: "Action".to_string(),
-        native_token: "TOKEN".to_string(),
-        collection_symbol: "SYM".to_string(),
-        collection_name: "Collection".to_string(),
-        collection_description: "Description".to_string(),
-        collection_image: "https://example.com/image.png".to_string(),
-        time_played: "0".to_string(),
-        other: None,
-    };
-    let initialize_instruction = borsh::to_vec(&initialize_instruction)
-        .unwrap(); // Serialize the instruction
+    banks_client.process_transaction(transaction).await.unwrap();
 
-    let init_instruction = Instruction {
-        program_id: PROGRAM_ID,
-        accounts: vec![
-            AccountMeta::new(registry_account.pubkey(), false), // Registry account
-            AccountMeta::new(payer.pubkey(), true),            // Payer (admin)
-            AccountMeta::new_readonly(solana_program::system_program::id(), false), // System program
-        ],
-        data: initialize_instruction,
-    };
-
-    let mut tx = Transaction::new_with_payer(&[init_instruction], Some(&payer.pubkey()));
-    tx.sign(&[&payer], recent_blockhash);
-    banks_client.process_transaction(tx).await.unwrap();
-
-    // Step 5: Verify the initialized data
-    let registry_account_data = banks_client
-        .get_account(registry_account.pubkey())
+    // Fetch and verify the registry account data
+    let registry_account = banks_client
+        .get_account(registry_pda)
         .await
-        .unwrap()
-        .expect("Registry account not found");
-    let registry_data: RegistryData =
-        BorshDeserialize::try_from_slice(&registry_account_data.data).unwrap();
+        .expect("get_account")
+        .expect("registry_account not found");
 
-    assert!(registry_data.is_initialized);
-    assert_eq!(registry_data.publisher_name, "Publisher");
-    assert_eq!(registry_data.publisher_logo, "https://example.com/logo.png");
+    let registry_data = RegistryData::try_from_slice(&registry_account.data).expect("deserialize RegistryData");
 
-    // Step 6: Update the registry account
-    let update_instruction = borsh::to_vec(&RegistryInstruction::UpdateRegistry {
-        new_publisher_name: Some("Updated Publisher".to_string()),
-        new_publisher_logo: None,
-        new_genre: Some("Adventure".to_string()),
-        new_native_token: None,
-        new_collection_symbol: None,
-        new_collection_name: None,
-        new_collection_description: None,
-        new_collection_image: None,
-        new_time_played: Some("100".to_string()),
-        new_other: Some("Additional Info".to_string()),
-    })
-    .unwrap(); // Serialize the instruction
+    assert!(registry_data.is_initialized, "Registry should be initialized");
+    assert_eq!(registry_data.admin, payer.pubkey(), "Admin pubkey mismatch");
+    assert!(registry_data.game_studios.is_empty(), "Game studios should be empty");
+}
 
-    let update_instruction = Instruction {
-        program_id: PROGRAM_ID,
-        accounts: vec![
-            AccountMeta::new(registry_account.pubkey(), false), // Registry account
-            AccountMeta::new(payer.pubkey(), true),            // Admin (signer)
+#[tokio::test]
+async fn test_create_game_studio() {
+    // Initialize the program test environment
+    let program_id = Pubkey::new_unique();
+    let mut program_test = ProgramTest::new(
+        "your_program", // Replace with your program's name
+        program_id,
+        processor!(process_instruction),
+    );
+
+    // Add the MPL Token Metadata program to the test environment
+    program_test.add_program("mpl_token_metadata", mpl_token_metadata::ID, None);
+
+    // Start the test environment
+    let (mut banks_client, payer, recent_blockhash) = program_test.start().await;
+
+    // Generate PDAs
+    let registry_seeds = &[b"registry"];
+    let (registry_pda, _registry_bump) = Pubkey::find_program_address(registry_seeds, &program_id);
+
+    // Allocate space for the registry account
+    program_test.add_account(
+        registry_pda,
+        Account {
+            lamports: Rent::default().minimum_balance(RegistryData::LEN),
+            data: vec![0; RegistryData::LEN],
+            owner: program_id,
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
+
+    // Initialize the registry first
+    {
+        // Create the InitializeRegistry instruction
+        let initialize_registry_ix = RegistryInstruction::InitializeRegistry {};
+
+        // Serialize the instruction using Borsh
+        let initialize_registry_data = initialize_registry_ix.try_to_vec().unwrap();
+
+        // Create the InitializeRegistry instruction
+        let initialize_registry_instruction = Instruction {
+            program_id,
+            accounts: vec![
+                // Registry account (PDA)
+                AccountMeta::new(registry_pda, false),
+                // Admin account (payer)
+                AccountMeta::new(payer.pubkey(), true),
+                // System program
+                AccountMeta::new_readonly(solana_program::system_program::id(), false),
+            ],
+            data: initialize_registry_data,
+        };
+
+        // Create and send the transaction
+        let transaction = Transaction::new_signed_with_payer(
+            &[initialize_registry_instruction],
+            Some(&payer.pubkey()),
+            &[&payer],
+            recent_blockhash,
+        );
+
+        banks_client.process_transaction(transaction).await.unwrap();
+    }
+
+    // Define game studio details
+    let name = "Game Studio A".to_string();
+    let symbol = "GSA".to_string();
+    let uri = "https://example.com/metadata_a.json".to_string();
+
+    // Generate keypairs for Mint and Metadata accounts
+    let mint = Keypair::new();
+    let metadata = Keypair::new();
+
+    // Derive Metadata PDA
+    let (metadata_pda, _metadata_bump) = Pubkey::find_program_address(
+        &[
+            b"metadata",
+            &mpl_token_metadata::ID.to_bytes(),
+            mint.pubkey().as_ref(),
         ],
-        data: update_instruction,
+        &mpl_token_metadata::ID,
+    );
+
+    // Allocate space for the Mint account
+    program_test.add_account(
+        mint.pubkey(),
+        Account {
+            lamports: Rent::default().minimum_balance(Mint::LEN),
+            data: vec![0; Mint::LEN],
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
+
+    // Allocate space for the Metadata account
+    program_test.add_account(
+        metadata_pda,
+        Account {
+            lamports: Rent::default().minimum_balance(1000), // Adjust based on actual requirement
+            data: vec![0; 1000], // Adjust based on actual requirement
+            owner: mpl_token_metadata::ID,
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
+
+    // Create the CreateGameStudio instruction
+    let create_game_studio_ix = RegistryInstruction::CreateGameStudio {
+        name: name.clone(),
+        symbol: symbol.clone(),
+        uri: uri.clone(),
     };
 
-    let mut tx = Transaction::new_with_payer(&[update_instruction], Some(&payer.pubkey()));
-    tx.sign(&[&payer], recent_blockhash);
-    banks_client.process_transaction(tx).await.unwrap();
+    // Serialize the instruction using Borsh
+    let create_game_studio_data = create_game_studio_ix.try_to_vec().unwrap();
 
-    // Step 7: Verify the updated data
-    let updated_registry_account_data = banks_client
-        .get_account(registry_account.pubkey())
+    // Create and send the CreateGameStudio instruction
+    let create_game_studio_instruction = Instruction {
+        program_id,
+        accounts: vec![
+            // Metadata account
+            AccountMeta::new(metadata_pda, false),
+            // Mint account
+            AccountMeta::new(mint.pubkey(), false),
+            // Payer account
+            AccountMeta::new(payer.pubkey(), true),
+            // System program
+            AccountMeta::new_readonly(solana_program::system_program::id(), false),
+            // Rent sysvar
+            AccountMeta::new_readonly(solana_program::sysvar::rent::id(), false),
+        ],
+        data: create_game_studio_data,
+    };
+
+    let transaction = Transaction::new_signed_with_payer(
+        &[create_game_studio_instruction],
+        Some(&payer.pubkey()),
+        &[&payer],
+        recent_blockhash,
+    );
+
+    banks_client.process_transaction(transaction).await.unwrap();
+
+    // Fetch and verify the registry account data
+    let registry_account = banks_client
+        .get_account(registry_pda)
         .await
-        .unwrap()
-        .expect("Registry account not found after update");
-    let updated_registry_data: RegistryData =
-        BorshDeserialize::try_from_slice(&updated_registry_account_data.data).unwrap();
+        .expect("get_account")
+        .expect("registry_account not found");
 
-    assert!(updated_registry_data.is_initialized);
-    assert_eq!(updated_registry_data.publisher_name, "Updated Publisher");
-    assert_eq!(updated_registry_data.genre, "Adventure");
-    assert_eq!(updated_registry_data.time_played, "100");
-    assert_eq!(updated_registry_data.other, Some("Additional Info".to_string()));
+    let registry_data = RegistryData::try_from_slice(&registry_account.data).expect("deserialize RegistryData");
 
-    println!("Test succeeded!");
+    assert!(
+        registry_data.game_studios.contains(&mint.pubkey()),
+        "Mint should be registered in game_studios"
+    );
+}
+
+#[tokio::test]
+async fn test_update_game_studio() {
+    // Initialize the program test environment
+    let program_id = Pubkey::new_unique();
+    let mut program_test = ProgramTest::new(
+        "your_program", // Replace with your program's name
+        program_id,
+        processor!(process_instruction),
+    );
+
+    // Add the MPL Token Metadata program to the test environment
+    program_test.add_program("mpl_token_metadata", mpl_token_metadata::ID, None);
+
+    // Start the test environment
+    let (mut banks_client, payer, recent_blockhash) = program_test.start().await;
+
+    // Generate PDAs
+    let registry_seeds = &[b"registry"];
+    let (registry_pda, _registry_bump) = Pubkey::find_program_address(registry_seeds, &program_id);
+
+    // Allocate space for the registry account
+    program_test.add_account(
+        registry_pda,
+        Account {
+            lamports: Rent::default().minimum_balance(RegistryData::LEN),
+            data: vec![0; RegistryData::LEN],
+            owner: program_id,
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
+
+    // Initialize the registry first
+    {
+        // Create the InitializeRegistry instruction
+        let initialize_registry_ix = RegistryInstruction::InitializeRegistry {};
+
+        // Serialize the instruction using Borsh
+        let initialize_registry_data = initialize_registry_ix.try_to_vec().unwrap();
+
+        // Create the InitializeRegistry instruction
+        let initialize_registry_instruction = Instruction {
+            program_id,
+            accounts: vec![
+                // Registry account (PDA)
+                AccountMeta::new(registry_pda, false),
+                // Admin account (payer)
+                AccountMeta::new(payer.pubkey(), true),
+                // System program
+                AccountMeta::new_readonly(solana_program::system_program::id(), false),
+            ],
+            data: initialize_registry_data,
+        };
+
+        // Create and send the transaction
+        let transaction = Transaction::new_signed_with_payer(
+            &[initialize_registry_instruction],
+            Some(&payer.pubkey()),
+            &[&payer],
+            recent_blockhash,
+        );
+
+        banks_client.process_transaction(transaction).await.unwrap();
+    }
+
+    // Define game studio details
+    let name = "Game Studio B".to_string();
+    let symbol = "GSB".to_string();
+    let uri = "https://example.com/metadata_b.json".to_string();
+
+    // Generate keypairs for Mint and Metadata accounts
+    let mint = Keypair::new();
+    let metadata = Keypair::new();
+
+    // Derive Metadata PDA
+    let (metadata_pda, _metadata_bump) = Pubkey::find_program_address(
+        &[
+            b"metadata",
+            &mpl_token_metadata::ID.to_bytes(),
+            mint.pubkey().as_ref(),
+        ],
+        &mpl_token_metadata::ID,
+    );
+
+    // Allocate space for the Mint account
+    program_test.add_account(
+        mint.pubkey(),
+        Account {
+            lamports: Rent::default().minimum_balance(Mint::LEN),
+            data: vec![0; Mint::LEN],
+            owner: spl_token::id(),
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
+
+    // Allocate space for the Metadata account
+    program_test.add_account(
+        metadata_pda,
+        Account {
+            lamports: Rent::default().minimum_balance(1000), // Adjust based on actual requirement
+            data: vec![0; 1000], // Adjust based on actual requirement
+            owner: mpl_token_metadata::ID,
+            executable: false,
+            rent_epoch: 0,
+        },
+    );
+
+    // Create the CreateGameStudio instruction
+    let create_game_studio_ix = RegistryInstruction::CreateGameStudio {
+        name: name.clone(),
+        symbol: symbol.clone(),
+        uri: uri.clone(),
+    };
+
+    // Serialize the instruction using Borsh
+    let create_game_studio_data = create_game_studio_ix.try_to_vec().unwrap();
+
+    // Create and send the CreateGameStudio instruction
+    let create_game_studio_instruction = Instruction {
+        program_id,
+        accounts: vec![
+            // Metadata account
+            AccountMeta::new(metadata_pda, false),
+            // Mint account
+            AccountMeta::new(mint.pubkey(), false),
+            // Payer account
+            AccountMeta::new(payer.pubkey(), true),
+            // System program
+            AccountMeta::new_readonly(solana_program::system_program::id(), false),
+            // Rent sysvar
+            AccountMeta::new_readonly(solana_program::sysvar::rent::id(), false),
+        ],
+        data: create_game_studio_data,
+    };
+
+    let transaction = Transaction::new_signed_with_payer(
+        &[create_game_studio_instruction],
+        Some(&payer.pubkey()),
+        &[&payer],
+        recent_blockhash,
+    );
+
+    banks_client.process_transaction(transaction).await.unwrap();
+
+    // Define new URI for updating
+    let new_uri = Some("https://example.com/metadata_b_updated.json".to_string());
+
+    // Create the UpdateGameStudio instruction
+    let update_game_studio_ix = RegistryInstruction::UpdateGameStudio {
+        new_uri: new_uri.clone(),
+    };
+
+    // Serialize the instruction using Borsh
+    let update_game_studio_data = update_game_studio_ix.try_to_vec().unwrap();
+
+    // Create and send the UpdateGameStudio instruction
+    let update_game_studio_instruction = Instruction {
+        program_id,
+        accounts: vec![
+            // Registry account (PDA)
+            AccountMeta::new(registry_pda, false),
+            // Admin account (payer)
+            AccountMeta::new(payer.pubkey(), true),
+            // Mint account
+            AccountMeta::new(mint.pubkey(), false),
+            // Metadata account
+            AccountMeta::new(metadata_pda, false),
+            // Metadata program
+            AccountMeta::new_readonly(mpl_token_metadata::ID, false),
+            // System program
+            AccountMeta::new_readonly(solana_program::system_program::id(), false),
+            // Rent sysvar
+            AccountMeta::new_readonly(solana_program::sysvar::rent::id(), false),
+        ],
+        data: update_game_studio_data,
+    };
+
+    let transaction = Transaction::new_signed_with_payer(
+        &[update_game_studio_instruction],
+        Some(&payer.pubkey()),
+        &[&payer],
+        recent_blockhash,
+    );
+
+    banks_client.process_transaction(transaction).await.unwrap();
+
+    // Fetch and verify the updated metadata
+    let updated_metadata_account = banks_client
+        .get_account(metadata_pda)
+        .await
+        .expect("get_account")
+        .expect("metadata_account not found");
+
+    // Deserialize the updated metadata using MPL Token Metadata's unpack method
+    let updated_metadata = mpl_token_metadata::state::Metadata::unpack(&updated_metadata_account.data)
+        .expect("unpack Metadata");
+
+    assert_eq!(
+        updated_metadata.data.uri,
+        new_uri.unwrap(),
+        "URI should be updated"
+    );
 }
