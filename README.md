@@ -1,4 +1,4 @@
-# Sol XYZ - Web3 Gaming API
+# Metaloot - Web3 Gaming API
 
 A powerful blockchain-based API built on Solana for gaming studios to manage in-game assets and tokens.
 
