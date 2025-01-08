@@ -3,7 +3,7 @@ import { Program } from "@coral-xyz/anchor";
 import { MetalootRegistryProgram } from "../target/types/metaloot_registry_program";
 import { assert } from "chai";
 import { PublicKey } from "@solana/web3.js";
-import { getMint } from "@solana/spl-token";
+import { ASSOCIATED_TOKEN_PROGRAM_ID, createAccount, createMint, getAccount, getAssociatedTokenAddress, getMint, mintTo, TOKEN_PROGRAM_ID, transfer } from "@solana/spl-token";
 
 describe("metaloot_registry_program", () => {
   const TOKEN_METADATA_PROGRAM_ID = new PublicKey('metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s');
@@ -301,6 +301,111 @@ describe("metaloot_registry_program", () => {
 
     assert.equal(playerAccount.username, "updated_username");
     assert.equal(playerAccount.admin.toBase58(), newAdmin.publicKey.toBase58());
+  });
+
+  it("Can initialize player token accounts and receive tokens", async () => {
+    // Generate keypairs for required accounts
+    const sender = anchor.web3.Keypair.fromSecretKey(
+      Uint8Array.from(
+        JSON.parse(
+          require('fs').readFileSync(
+            require('os').homedir() + '/metaloot-keypair.json',
+            'utf-8'
+          )
+        )
+      )
+    );
+    const entrySeeds = anchor.web3.Keypair.generate();
+    const tokenMintKeypair = anchor.web3.Keypair.generate();
+
+    // Find PDA for player account
+    const player_pda = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("player"), entrySeeds.publicKey.toBuffer()],
+      program.programId
+    )[0];
+
+    // Create token mint
+    const tokenMint = await createMint(
+      program.provider.connection,
+      sender,
+      sender.publicKey,
+      null,
+      9
+    );
+
+    // Create sender's ATA and mint tokens
+    const senderATA = await createAccount(
+      program.provider.connection,
+      sender,
+      tokenMint,
+      sender.publicKey
+    );
+
+    // Mint 1000 tokens to sender
+    await mintTo(
+      program.provider.connection,
+      sender,
+      tokenMint,
+      senderATA,
+      sender.publicKey,
+      1000 * 1e9
+    );
+
+    // Derive player's token ATA
+    const playerTokenATA = await getAssociatedTokenAddress(
+      tokenMint,
+      player_pda,
+      true
+    );
+
+    // Create player account first
+    await program.methods
+      .createPlayerAccount("testPlayer123")
+      .accounts({
+        payer: sender.publicKey,
+        playerAccount: player_pda,
+        entrySeed: entrySeeds.publicKey,
+        systemProgram: anchor.web3.SystemProgram.programId,
+      })
+      .signers([])
+      .rpc();
+
+    // Initialize player token account
+    const initTx = await program.methods
+      .initializePlayerTokenAccounts()
+      .accounts({
+        payer: sender.publicKey,
+        tokenMint: tokenMint,
+        playerPda: player_pda,
+        playerTokenAccount: playerTokenATA,
+        entrySeed: entrySeeds.publicKey,
+        systemProgram: anchor.web3.SystemProgram.programId,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+      })
+      .signers([sender])
+      .rpc();
+
+    console.log("Initialize player token accounts transaction signature:", initTx);
+
+    // Transfer tokens to player
+    const transferTx = await transfer(
+      program.provider.connection,
+      sender,
+      senderATA,
+      playerTokenATA,
+      sender.publicKey,
+      100 * 1e9
+    );
+
+    console.log("Transfer tokens transaction signature:", transferTx);
+
+    // Verify token balance in player's account
+    const playerTokenAccount = await getAccount(
+      program.provider.connection,
+      playerTokenATA
+    );
+    assert.equal(Number(playerTokenAccount.amount), 100 * 1e9);
   });
 
   // it("Can create a fungible token for a game studio", async () => {

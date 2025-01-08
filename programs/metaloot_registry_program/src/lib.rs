@@ -97,44 +97,26 @@ pub mod metaloot_registry_program {
         Ok(())
     }
 
-    // pub fn initialize_player_token_accounts(
-    //     ctx: Context<InitializePlayerTokenAccounts>,
-    // ) -> Result<()> {
-    //     // Create ATA for fungible token
-    //     if ctx.accounts.game_studio.native_token != Pubkey::default() {
-    //         anchor_spl::associated_token::create(CpiContext::new(
-    //             ctx.accounts.associated_token_program.to_account_info(),
-    //             anchor_spl::associated_token::Create {
-    //                 payer: ctx.accounts.payer.to_account_info(),
-    //                 associated_token: ctx.accounts.player_token_account.to_account_info(),
-    //                 authority: ctx.accounts.player.to_account_info(),
-    //                 mint: ctx.accounts.token_mint.to_account_info(),
-    //                 system_program: ctx.accounts.system_program.to_account_info(),
-    //                 token_program: ctx.accounts.token_program.to_account_info(),
-    //             },
-    //         ))?;
-    //         msg!("Created player token account");
-    //     }
+    pub fn initialize_player_token_accounts(
+        ctx: Context<InitializePlayerTokenAccounts>,
+    ) -> Result<()> {
+        // Create ATA for the token
+        anchor_spl::associated_token::create(CpiContext::new(
+            ctx.accounts.associated_token_program.to_account_info(),
+            anchor_spl::associated_token::Create {
+                payer: ctx.accounts.payer.to_account_info(),
+                associated_token: ctx.accounts.player_token_account.to_account_info(),
+                authority: ctx.accounts.player_pda.to_account_info(),
+                mint: ctx.accounts.token_mint.to_account_info(),
+                system_program: ctx.accounts.system_program.to_account_info(),
+                token_program: ctx.accounts.token_program.to_account_info(),
+            },
+        ))?;
+        msg!("Created player token account");
 
-    //     // Create ATA for collection NFTs if collection exists
-    //     if ctx.accounts.game_studio.nft_collection != Pubkey::default() {
-    //         anchor_spl::associated_token::create(CpiContext::new(
-    //             ctx.accounts.associated_token_program.to_account_info(),
-    //             anchor_spl::associated_token::Create {
-    //                 payer: ctx.accounts.payer.to_account_info(),
-    //                 associated_token: ctx.accounts.player_nft_account.to_account_info(),
-    //                 authority: ctx.accounts.player.to_account_info(),
-    //                 mint: ctx.accounts.collection_mint.to_account_info(),
-    //                 system_program: ctx.accounts.system_program.to_account_info(),
-    //                 token_program: ctx.accounts.token_program.to_account_info(),
-    //             },
-    //         ))?;
-    //         msg!("Created player NFT account");
-    //     }
-
-    //     msg!("Player token accounts initialized successfully");
-    //     Ok(())
-    // }
+        msg!("Player token account initialized successfully");
+        Ok(())
+    }
 
     // pub fn create_fungible_token(ctx: Context<CreateFungibleToken>) -> Result<()> {
     //     // Initialize mint with studio PDA as authority
@@ -640,47 +622,34 @@ pub struct UpdatePlayerAccount<'info> {
     pub entry_seed: AccountInfo<'info>,
 }
 
-// #[derive(Accounts)]
-// pub struct InitializePlayerTokenAccounts<'info> {
-//     #[account(mut)]
-//     pub payer: Signer<'info>,
+#[derive(Accounts)]
+pub struct InitializePlayerTokenAccounts<'info> {
+    #[account(
+        mut,
+        constraint = payer.key() == player_pda.admin @ ErrorCode::ConstraintOwner
+    )]
+    pub payer: Signer<'info>,
+    
+    /// CHECK: This is the player's token account
+    pub token_mint: AccountInfo<'info>,
 
-//     /// CHECK: This is the player's wallet
-//     pub player: AccountInfo<'info>,
+    #[account(
+        seeds = [b"player", entry_seed.key().as_ref()],
+        bump
+    )]
+    pub player_pda: Account<'info, PlayerAccount>,
+    
+    /// CHECK: This is the player's token account
+    #[account(mut)]
+    pub player_token_account: UncheckedAccount<'info>,
 
-//     #[account(
-//         seeds = [b"registry", entry_seed.key().as_ref()],
-//         bump
-//     )]
-//     pub game_studio: Account<'info, GameRegistryMetadata>,
+    /// CHECK: This is safe as we're just using it as a reference for PDA seeds
+    pub entry_seed: AccountInfo<'info>,
 
-//     /// CHECK: This is the game's token mint
-//     #[account(
-//         constraint = token_mint.key() == game_studio.native_token @ ErrorCode::InvalidTokenMint
-//     )]
-//     pub token_mint: AccountInfo<'info>,
-
-//     /// CHECK: This is the game's NFT collection mint
-//     #[account(
-//         constraint = collection_mint.key() == game_studio.nft_collection @ ErrorCode::InvalidCollection
-//     )]
-//     pub collection_mint: AccountInfo<'info>,
-
-//     /// CHECK: This is the player's token account
-//     #[account(mut)]
-//     pub player_token_account: UncheckedAccount<'info>,
-
-//     /// CHECK: This is the player's NFT account
-//     #[account(mut)]
-//     pub player_nft_account: UncheckedAccount<'info>,
-
-//     /// CHECK: This is safe as we're just using it for seeds
-//     pub entry_seed: UncheckedAccount<'info>,
-
-//     pub system_program: Program<'info, System>,
-//     pub token_program: Program<'info, Token>,
-//     pub associated_token_program: Program<'info, AssociatedToken>,
-// }
+    pub system_program: Program<'info, System>,
+    pub token_program: Program<'info, Token>,
+    pub associated_token_program: Program<'info, AssociatedToken>,
+}
 
 // #[derive(Accounts)]
 // pub struct MintFungibleToken<'info> {
