@@ -212,7 +212,7 @@ describe("metaloot_registry_program", () => {
         })
         .signers([])
         .rpc();
-      
+
       assert.fail("Should not be able to create duplicate player account");
     } catch (error) {
       // console.log("failed to create duplicate player account", error);
@@ -408,71 +408,150 @@ describe("metaloot_registry_program", () => {
     assert.equal(Number(playerTokenAccount.amount), 100 * 1e9);
   });
 
-  // it("Can create a fungible token for a game studio", async () => {
-  //   // First create a game studio since we need it for the token
-  //   const entrySeed = anchor.web3.Keypair.generate();
-  //   const [registryPda] = anchor.web3.PublicKey.findProgramAddressSync(
-  //     [Buffer.from("registry"), entrySeed.publicKey.toBuffer()],
-  //     program.programId
-  //   );
-  
-  //   // Create game studio first
-  //   await program.methods
-  //     .createGameStudio({
-  //       name: "Test Studio",
-  //       symbol: "TEST",
-  //       uri: "https://test.uri",
-  //       creator: program.provider.publicKey,
-  //       nativeToken: anchor.web3.PublicKey.default,
-  //       nftCollection: anchor.web3.PublicKey.default,
-  //     })
-  //     .accounts({
-  //       payer: program.provider.publicKey,
-  //       pda: registryPda,
-  //       entrySeed: entrySeed.publicKey,
-  //       systemProgram: anchor.web3.SystemProgram.programId,
-  //     })
-  //     .signers([])
-  //     .rpc();
-  
-  //   // Now create the token
-  //   const [mintToken] = anchor.web3.PublicKey.findProgramAddressSync(
-  //     [Buffer.from("token"), entrySeed.publicKey.toBuffer()],
-  //     program.programId
-  //   );
-  //   const [metadataPda] = anchor.web3.PublicKey.findProgramAddressSync(
-  //     [
-  //       Buffer.from("metadata"), 
-  //       TOKEN_METADATA_PROGRAM_ID.toBuffer(),
-  //       mintToken.toBuffer(),
-  //     ],
-  //     TOKEN_METADATA_PROGRAM_ID
-  //   );
-  
-  //   await program.methods
-  //     .createFungibleToken()
-  //     .accounts({
-  //       payer: program.provider.publicKey,
-  //       pda: registryPda,
-  //       mint: mintToken,
-  //       metadata: metadataPda,
-  //       tokenMetadataProgram: TOKEN_METADATA_PROGRAM_ID,
-  //       entrySeed: entrySeed.publicKey,
-  //       systemProgram: anchor.web3.SystemProgram.programId,
-  //       tokenProgram: anchor.utils.token.TOKEN_PROGRAM_ID,
-  //       rent: anchor.web3.SYSVAR_RENT_PUBKEY,
-  //     })
-  //     .rpc();
-  
-  //   // Verify the token was created
-  //   const mintInfo = await getMint(program.provider.connection, mintToken);
-  //   assert.ok(mintInfo.mintAuthority.equals(registryPda));
-  //   assert.ok(mintInfo.freezeAuthority.equals(registryPda));
-  //   assert.equal(mintInfo.decimals, 9);
-  
-  //   // Verify the metadata was created
-  //   const metadataAccount = await program.provider.connection.getAccountInfo(metadataPda);
-  //   assert.ok(metadataAccount !== null);
-  // });
+  it("Can transfer tokens between player accounts using program function", async () => {
+    const sender = anchor.web3.Keypair.fromSecretKey(
+      Uint8Array.from(JSON.parse(require('fs').readFileSync(
+        require('os').homedir() + '/metaloot-keypair.json', 'utf-8'
+      )))
+    );
+
+    // Create two players for testing
+    const player1Seeds = anchor.web3.Keypair.generate();
+    const player2Seeds = anchor.web3.Keypair.generate();
+
+    // Find PDAs for both players
+    const player1_pda = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("player"), player1Seeds.publicKey.toBuffer()],
+      program.programId
+    )[0];
+    const player2_pda = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("player"), player2Seeds.publicKey.toBuffer()],
+      program.programId
+    )[0];
+
+    // Create token mint
+    const tokenMint = await createMint(
+      program.provider.connection,
+      sender,
+      sender.publicKey,
+      null,
+      9
+    );
+
+    // Get ATAs for both players
+    const player1TokenATA = await getAssociatedTokenAddress(
+      tokenMint,
+      player1_pda,
+      true
+    );
+    const player2TokenATA = await getAssociatedTokenAddress(
+      tokenMint,
+      player2_pda,
+      true
+    );
+
+    // Create player accounts
+    await program.methods
+      .createPlayerAccount("player1")
+      .accounts({
+        payer: sender.publicKey,
+        playerAccount: player1_pda,
+        entrySeed: player1Seeds.publicKey,
+        systemProgram: anchor.web3.SystemProgram.programId,
+      })
+      .signers([])
+      .rpc();
+
+    await program.methods
+      .createPlayerAccount("player2")
+      .accounts({
+        payer: sender.publicKey,
+        playerAccount: player2_pda,
+        entrySeed: player2Seeds.publicKey,
+        systemProgram: anchor.web3.SystemProgram.programId,
+      })
+      .signers([])
+      .rpc();
+
+    // Initialize token accounts for both players
+    await program.methods
+      .initializePlayerTokenAccounts()
+      .accounts({
+        payer: sender.publicKey,
+        tokenMint: tokenMint,
+        playerPda: player1_pda,
+        playerTokenAccount: player1TokenATA,
+        entrySeed: player1Seeds.publicKey,
+        systemProgram: anchor.web3.SystemProgram.programId,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+      })
+      .signers([sender])
+      .rpc();
+
+    await program.methods
+      .initializePlayerTokenAccounts()
+      .accounts({
+        payer: sender.publicKey,
+        tokenMint: tokenMint,
+        playerPda: player2_pda,
+        playerTokenAccount: player2TokenATA,
+        entrySeed: player2Seeds.publicKey,
+        systemProgram: anchor.web3.SystemProgram.programId,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+      })
+      .signers([sender])
+      .rpc();
+
+    // Mint initial tokens to player1
+    const senderATA = await createAccount(
+      program.provider.connection,
+      sender,
+      tokenMint,
+      sender.publicKey
+    );
+    await mintTo(
+      program.provider.connection,
+      sender,
+      tokenMint,
+      player1TokenATA,
+      sender.publicKey,
+      1000 * 1e9
+    );
+
+    // Transfer tokens using program function
+    const transferAmount = 500 * 1e9;
+    const transferTx = await program.methods
+      .transferTokens(new anchor.BN(transferAmount))
+      .accounts({
+        payer: sender.publicKey,
+        tokenMint,
+        senderSeed: player1Seeds.publicKey,
+        senderPda: player1_pda,
+        senderTokenAccount: player1TokenATA,
+        recipientSeed: player2Seeds.publicKey,
+        recipientPda: player2_pda,
+        recipientTokenAccount: player2TokenATA,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      })
+      .signers([sender])
+      .rpc();
+
+    console.log("Program transfer transaction signature:", transferTx);
+
+    // Verify token balances
+    const player1TokenAccount = await getAccount(
+      program.provider.connection,
+      player1TokenATA
+    );
+    const player2TokenAccount = await getAccount(
+      program.provider.connection,
+      player2TokenATA
+    );
+
+    assert.equal(Number(player1TokenAccount.amount), 500 * 1e9);
+    assert.equal(Number(player2TokenAccount.amount), 500 * 1e9);
+  });
 
 });
