@@ -1,21 +1,13 @@
 use anchor_lang::prelude::*;
 use anchor_spl::{
-    associated_token::get_associated_token_address, token::{self, Mint, Token}, token_interface::spl_token_metadata_interface::state::TokenMetadata
+    associated_token::get_associated_token_address, token::{self,Token},
 };
-// use mpl_token_metadata::types::{Creator, DataV2};
 use anchor_spl::associated_token::AssociatedToken;
-use mpl_token_metadata::ID as TOKEN_METADATA_ID;
 
 declare_id!("v3MbKaZSQJrwZWUz81cQ3kc8XvMsiNNxZjM3vN5BB32");
 
 #[program]
 pub mod metaloot_registry_program {
-    use anchor_lang::solana_program::program::invoke_signed;
-    use mpl_token_metadata::{
-        instructions::{CreateMetadataAccountV3, CreateMetadataAccountV3InstructionArgs},
-        types::DataV2,
-    };
-
     use super::*;
 
     pub fn create_game_studio(
@@ -64,7 +56,7 @@ pub mod metaloot_registry_program {
         ctx: Context<CreatePlayerAccount>,
         username: String,
     ) -> Result<()> {
-        let player_account = &mut ctx.accounts.player_account;
+        let player_account = &mut ctx.accounts.player_pda;
         let clock = Clock::get()?;
 
         player_account.admin = ctx.accounts.payer.key();
@@ -80,7 +72,7 @@ pub mod metaloot_registry_program {
         new_username: Option<String>,
         new_admin: Option<Pubkey>,
     ) -> Result<()> {
-        let player_account = &mut ctx.accounts.player_account;
+        let player_account = &mut ctx.accounts.player_pda;
 
         // Update username if provided
         if let Some(username) = new_username {
@@ -197,175 +189,13 @@ pub struct UpdateGameStudio<'info> {
     #[account(
         mut,
         seeds = [b"registry", entry_seed.key().as_ref()],
-        bump
+        bump,
+        constraint = !pda.symbol.trim().is_empty() @ ErrorCode::ConstraintAccountIsNone
     )]
     pub pda: Account<'info, GameRegistryMetadata>,
     /// CHECK: This is safe as we're just using it as a reference for PDA seeds
     pub entry_seed: AccountInfo<'info>,
 }
-
-// #[derive(Accounts)]
-// pub struct CreateFungibleToken<'info> {
-//     #[account(
-//         mut,
-//         constraint = payer.key() == pda.creator @ ErrorCode::InvalidGameStudioAdmin
-//     )]
-//     pub payer: Signer<'info>,
-
-//     #[account(
-//         mut,
-//         seeds = [b"registry", entry_seed.key().as_ref()],
-//         bump
-//     )]
-//     pub pda: Account<'info, GameRegistryMetadata>,
-
-//     // #[account(
-//     //     mut,
-//     //     seeds = [b"token", entry_seed.key().as_ref()],
-//     //     bump
-//     // )]
-//     // /// CHECK: This is safe as we're just using it for seeds
-//     // pub mint: AccountInfo<'info>,
-//     /// CHECK: This is safe as we're just using it for seeds
-//     #[account(
-//         init,
-//         payer = payer,
-//         space = Mint::LEN,
-//         seeds = [b"token", entry_seed.key().as_ref()],
-//         bump,
-//         owner = token::ID
-//     )]
-//     pub mint: UncheckedAccount<'info>,
-
-//     /// CHECK: This account is checked in the mpl_token_metadata program
-//     #[account(
-//         mut,
-//         seeds = [
-//             b"metadata",
-//             token_metadata_program.key().as_ref(),
-//             mint.key().as_ref()
-//         ],
-//         bump,
-//         seeds::program = TOKEN_METADATA_ID
-//     )]
-//     pub metadata: UncheckedAccount<'info>,
-
-//     /// CHECK: Verified using the constant ID
-//     #[account(address = TOKEN_METADATA_ID)]
-//     pub token_metadata_program: UncheckedAccount<'info>,
-
-//     /// CHECK: This is safe as we're just using it for seeds
-//     pub entry_seed: UncheckedAccount<'info>,
-
-//     pub system_program: Program<'info, System>,
-//     pub token_program: Program<'info, Token>,
-//     pub rent: Sysvar<'info, Rent>,
-// }
-
-// #[derive(Accounts)]
-// pub struct CreateNFTCollection<'info> {
-//     #[account(
-//         mut,
-//         constraint = payer.key() == pda.creator @ ErrorCode::InvalidGameStudioAdmin
-//     )]
-//     pub payer: Signer<'info>,
-
-//     #[account(
-//         mut,
-//         seeds = [b"registry", entry_seed.key().as_ref()],
-//         bump
-//     )]
-//     pub pda: Account<'info, GameRegistryMetadata>,
-
-//     #[account(
-//         init,
-//         payer = payer,
-//         space = Mint::LEN,
-//         seeds = [b"collection", entry_seed.key().as_ref()],
-//         bump,
-//         owner = token::ID
-//     )]
-//     pub collection_mint: UncheckedAccount<'info>,
-
-//     /// CHECK: This account is checked in the mpl_token_metadata program
-//     #[account(
-//         mut,
-//         seeds = [
-//             b"metadata",
-//             token_metadata_program.key().as_ref(),
-//             /// CHECK: This account is checked in the mpl_token_metadata program
-//             collection_mint.key().as_ref()
-//         ],
-//         bump,
-//         seeds::program = TOKEN_METADATA_ID
-//     )]
-//     pub metadata: UncheckedAccount<'info>,
-
-//     /// CHECK: Verified using the constant ID
-//     #[account(address = TOKEN_METADATA_ID)]
-//     pub token_metadata_program: UncheckedAccount<'info>,
-
-//     /// CHECK: This is safe as we're just using it for seeds
-//     pub entry_seed: UncheckedAccount<'info>,
-
-//     pub system_program: Program<'info, System>,
-//     pub token_program: Program<'info, Token>,
-//     pub rent: Sysvar<'info, Rent>,
-// }
-
-// #[derive(Accounts)]
-// pub struct MintNFT<'info> {
-//     #[account(
-//         mut,
-//         constraint = payer.key() == pda.creator @ ErrorCode::InvalidGameStudioAdmin
-//     )]
-//     pub payer: Signer<'info>,
-
-//     #[account(
-//         mut,
-//         seeds = [b"registry", entry_seed.key().as_ref()],
-//         bump
-//     )]
-//     pub pda: Account<'info, GameRegistryMetadata>,
-
-//     #[account(
-//         init,
-//         payer = payer,
-//         space = Mint::LEN,
-//         owner = token::ID
-//     )]
-//     pub nft_mint: UncheckedAccount<'info>,
-
-//     /// CHECK: This account is checked in the mpl_token_metadata program
-//     #[account(
-//         mut,
-//         seeds = [
-//             b"metadata",
-//             token_metadata_program.key().as_ref(),
-//             nft_mint.key().as_ref()
-//         ],
-//         bump,
-//         seeds::program = TOKEN_METADATA_ID
-//     )]
-//     pub metadata: UncheckedAccount<'info>,
-
-//     /// CHECK: This is the collection mint
-//     #[account(
-//         constraint = collection_mint.key() == pda.nft_collection @ ErrorCode::InvalidCollection
-//     )]
-//     pub collection_mint: UncheckedAccount<'info>,
-
-//     /// CHECK: Verified using the constant ID
-//     #[account(address = TOKEN_METADATA_ID)]
-//     pub token_metadata_program: UncheckedAccount<'info>,
-
-//     /// CHECK: This is safe as we're just using it for seeds
-//     pub entry_seed: UncheckedAccount<'info>,
-
-//     pub system_program: Program<'info, System>,
-//     pub token_program: Program<'info, Token>,
-//     pub rent: Sysvar<'info, Rent>,
-// }
 
 #[account]
 #[derive(Default)]
@@ -394,7 +224,7 @@ pub struct CreatePlayerAccount<'info> {
         ],
         bump,
     )]
-    pub player_account: Account<'info, PlayerAccount>,
+    pub player_pda: Account<'info, PlayerAccount>,
     /// CHECK: This is safe as we're just using it as a reference for PDA seeds
     pub entry_seed: AccountInfo<'info>,
 
@@ -405,7 +235,7 @@ pub struct CreatePlayerAccount<'info> {
 pub struct UpdatePlayerAccount<'info> {
     #[account(
         mut,
-        constraint = payer.key() == player_account.admin @ ErrorCode::ConstraintOwner
+        constraint = payer.key() == player_pda.admin @ ErrorCode::ConstraintOwner
     )]
     pub payer: Signer<'info>,
 
@@ -415,9 +245,10 @@ pub struct UpdatePlayerAccount<'info> {
             b"player",
             entry_seed.key().as_ref()
         ],
-        bump
+        bump,
+        constraint = player_pda.created_at != 0 @ ErrorCode::ConstraintAccountIsNone
     )]
-    pub player_account: Account<'info, PlayerAccount>,
+    pub player_pda: Account<'info, PlayerAccount>,
 
     /// CHECK: This is safe as we're just using it as a reference for PDA seeds
     pub entry_seed: AccountInfo<'info>,
@@ -436,7 +267,8 @@ pub struct InitializePlayerTokenAccounts<'info> {
 
     #[account(
         seeds = [b"player", entry_seed.key().as_ref()],
-        bump
+        bump,
+        constraint = player_pda.created_at != 0 @ ErrorCode::ConstraintAccountIsNone
     )]
     pub player_pda: Account<'info, PlayerAccount>,
     
@@ -470,6 +302,7 @@ pub struct TransferTokens<'info> {
     #[account(
         seeds = [b"player", sender_seed.key().as_ref()],
         bump,
+        constraint = sender_pda.created_at != 0 @ ErrorCode::ConstraintAccountIsNone
     )]
     pub sender_pda: Account<'info, PlayerAccount>,
 
@@ -487,6 +320,7 @@ pub struct TransferTokens<'info> {
     #[account(
         seeds = [b"player", recipient_seed.key().as_ref()],
         bump,
+        constraint = recipient_pda.created_at != 0 @ ErrorCode::ConstraintAccountIsNone
     )]
     pub recipient_pda: Account<'info, PlayerAccount>,
 
