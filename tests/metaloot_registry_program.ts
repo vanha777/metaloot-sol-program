@@ -60,7 +60,6 @@ describe("metaloot_registry_program", () => {
         nftCollectionKeypair.publicKey
       )
       .accounts({
-        payer: sender.publicKey,
         entrySeed: entrySeeds.publicKey,
         systemProgram: anchor.web3.SystemProgram.programId,
       })
@@ -120,11 +119,10 @@ describe("metaloot_registry_program", () => {
         oldNftCollection.publicKey,
       )
       .accounts({
-        payer: sender.publicKey,
         entrySeed: entrySeeds.publicKey,
         systemProgram: anchor.web3.SystemProgram.programId,
       })
-      .signers([])
+      .signers([sender])
       .rpc();
 
     // Update the studio
@@ -138,10 +136,9 @@ describe("metaloot_registry_program", () => {
         newNftCollection.publicKey,
       )
       .accounts({
-        payer: sender.publicKey,
         entrySeed: entrySeeds.publicKey,
       })
-      .signers([])
+      .signers([sender])
       .rpc();
 
     console.log("Update studio transaction signature:", tx);
@@ -181,11 +178,10 @@ describe("metaloot_registry_program", () => {
     const tx = await program.methods
       .createPlayerAccount("testPlayer123")
       .accounts({
-        payer: sender.publicKey,
         entrySeed: entrySeed.publicKey,
         systemProgram: anchor.web3.SystemProgram.programId,
       })
-      .signers([])
+      .signers([sender])
       .rpc();
 
     console.log("Create player account transaction signature:", tx);
@@ -202,12 +198,11 @@ describe("metaloot_registry_program", () => {
       await program.methods
         .createPlayerAccount("anotherPlayer")
         .accounts({
-          payer: sender.publicKey,
           playerAccount: playerPDA,
           entrySeed: entrySeed.publicKey,
           systemProgram: anchor.web3.SystemProgram.programId,
         })
-        .signers([])
+        .signers([sender])
         .rpc();
 
       assert.fail("Should not be able to create duplicate player account");
@@ -226,11 +221,10 @@ describe("metaloot_registry_program", () => {
     const tx2 = await program.methods
       .createPlayerAccount("differentPlayer")
       .accounts({
-        payer: sender.publicKey,
         entrySeed: newEntrySeed.publicKey,
         systemProgram: anchor.web3.SystemProgram.programId,
       })
-      .signers([])
+      .signers([sender])
       .rpc();
 
     console.log("Create second player account transaction signature:", tx2);
@@ -266,21 +260,19 @@ describe("metaloot_registry_program", () => {
     await program.methods
       .createPlayerAccount("initial_username")
       .accounts({
-        payer: sender.publicKey,
         entrySeed: entrySeeds.publicKey,
         systemProgram: anchor.web3.SystemProgram.programId,
       })
-      .signers([])
+      .signers([sender])
       .rpc();
 
     // Update the player account
     const tx = await program.methods
       .updatePlayerAccount("updated_username", newAdmin.publicKey)
       .accounts({
-        payer: sender.publicKey,
         entrySeed: entrySeeds.publicKey,
       })
-      .signers([])
+      .signers([sender])
       .rpc();
 
     console.log("Update player account transaction signature:", tx);
@@ -356,18 +348,16 @@ describe("metaloot_registry_program", () => {
     await program.methods
       .createPlayerAccount("testPlayer123")
       .accounts({
-        payer: sender.publicKey,
         entrySeed: entrySeeds.publicKey,
         systemProgram: anchor.web3.SystemProgram.programId,
       })
-      .signers([])
+      .signers([sender])
       .rpc();
 
     // Initialize player token account
     const initTx = await program.methods
       .initializePlayerTokenAccounts()
       .accounts({
-        payer: sender.publicKey,
         tokenMint: tokenMint,
         playerPda: player_pda,
         playerTokenAccount: playerTokenATA,
@@ -447,28 +437,25 @@ describe("metaloot_registry_program", () => {
     await program.methods
       .createPlayerAccount("player1")
       .accounts({
-        payer: sender.publicKey,
         entrySeed: player1Seeds.publicKey,
         systemProgram: anchor.web3.SystemProgram.programId,
       })
-      .signers([])
+      .signers([sender])
       .rpc();
 
     await program.methods
       .createPlayerAccount("player2")
       .accounts({
-        payer: sender.publicKey,
         entrySeed: player2Seeds.publicKey,
         systemProgram: anchor.web3.SystemProgram.programId,
       })
-      .signers([])
+      .signers([sender])
       .rpc();
 
     // Initialize token accounts for both players
     await program.methods
       .initializePlayerTokenAccounts()
       .accounts({
-        payer: sender.publicKey,
         tokenMint: tokenMint,
         playerPda: player1_pda,
         playerTokenAccount: player1TokenATA,
@@ -483,7 +470,6 @@ describe("metaloot_registry_program", () => {
     await program.methods
       .initializePlayerTokenAccounts()
       .accounts({
-        payer: sender.publicKey,
         tokenMint: tokenMint,
         playerPda: player2_pda,
         playerTokenAccount: player2TokenATA,
@@ -516,7 +502,6 @@ describe("metaloot_registry_program", () => {
     const transferTx = await program.methods
       .transferTokens(new anchor.BN(transferAmount))
       .accounts({
-        payer: sender.publicKey,
         tokenMint,
         senderSeed: player1Seeds.publicKey,
         senderPda: player1_pda,
