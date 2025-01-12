@@ -138,7 +138,7 @@ pub mod metaloot_registry_program {
         let seeds = &[
             b"player",
             entry_seed_key.as_ref(),
-            &[ctx.bumps.sender_pda],
+            &[ctx.accounts.sender_pda.bump],
         ];
         let signer_seeds = &[&seeds[..]];
 
@@ -295,7 +295,7 @@ pub struct InitializePlayerTokenAccounts<'info> {
 
     #[account(
         seeds = [b"player", entry_seed.key().as_ref()],
-        bump,
+        bump = player_pda.bump,
         constraint = player_pda.created_at != 0 @ ErrorCode::ConstraintAccountIsNone
     )]
     pub player_pda: Account<'info, PlayerAccount>,
@@ -329,7 +329,7 @@ pub struct TransferTokens<'info> {
 
     #[account(
         seeds = [b"player", sender_seed.key().as_ref()],
-        bump,
+        bump = sender_pda.bump,
         constraint = sender_pda.created_at != 0 @ ErrorCode::ConstraintAccountIsNone
     )]
     pub sender_pda: Account<'info, PlayerAccount>,
@@ -347,7 +347,7 @@ pub struct TransferTokens<'info> {
 
     #[account(
         seeds = [b"player", recipient_seed.key().as_ref()],
-        bump,
+        bump = recipient_pda.bump,
         constraint = recipient_pda.created_at != 0 @ ErrorCode::ConstraintAccountIsNone
     )]
     pub recipient_pda: Account<'info, PlayerAccount>,

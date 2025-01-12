@@ -61,7 +61,6 @@ describe("metaloot_registry_program", () => {
       )
       .accounts({
         payer: sender.publicKey,
-        pda: entry_account,
         entrySeed: entrySeeds.publicKey,
         systemProgram: anchor.web3.SystemProgram.programId,
       })
@@ -122,7 +121,6 @@ describe("metaloot_registry_program", () => {
       )
       .accounts({
         payer: sender.publicKey,
-        pda: entry_account,
         entrySeed: entrySeeds.publicKey,
         systemProgram: anchor.web3.SystemProgram.programId,
       })
@@ -141,7 +139,6 @@ describe("metaloot_registry_program", () => {
       )
       .accounts({
         payer: sender.publicKey,
-        pda: entry_account,
         entrySeed: entrySeeds.publicKey,
       })
       .signers([])
@@ -185,7 +182,6 @@ describe("metaloot_registry_program", () => {
       .createPlayerAccount("testPlayer123")
       .accounts({
         payer: sender.publicKey,
-        playerAccount: playerPDA,
         entrySeed: entrySeed.publicKey,
         systemProgram: anchor.web3.SystemProgram.programId,
       })
@@ -231,7 +227,6 @@ describe("metaloot_registry_program", () => {
       .createPlayerAccount("differentPlayer")
       .accounts({
         payer: sender.publicKey,
-        playerAccount: newPlayerPDA,
         entrySeed: newEntrySeed.publicKey,
         systemProgram: anchor.web3.SystemProgram.programId,
       })
@@ -272,7 +267,6 @@ describe("metaloot_registry_program", () => {
       .createPlayerAccount("initial_username")
       .accounts({
         payer: sender.publicKey,
-        playerAccount: player_account,
         entrySeed: entrySeeds.publicKey,
         systemProgram: anchor.web3.SystemProgram.programId,
       })
@@ -284,7 +278,6 @@ describe("metaloot_registry_program", () => {
       .updatePlayerAccount("updated_username", newAdmin.publicKey)
       .accounts({
         payer: sender.publicKey,
-        playerAccount: player_account,
         entrySeed: entrySeeds.publicKey,
       })
       .signers([])
@@ -364,7 +357,6 @@ describe("metaloot_registry_program", () => {
       .createPlayerAccount("testPlayer123")
       .accounts({
         payer: sender.publicKey,
-        playerAccount: player_pda,
         entrySeed: entrySeeds.publicKey,
         systemProgram: anchor.web3.SystemProgram.programId,
       })
@@ -456,7 +448,6 @@ describe("metaloot_registry_program", () => {
       .createPlayerAccount("player1")
       .accounts({
         payer: sender.publicKey,
-        playerAccount: player1_pda,
         entrySeed: player1Seeds.publicKey,
         systemProgram: anchor.web3.SystemProgram.programId,
       })
@@ -467,7 +458,6 @@ describe("metaloot_registry_program", () => {
       .createPlayerAccount("player2")
       .accounts({
         payer: sender.publicKey,
-        playerAccount: player2_pda,
         entrySeed: player2Seeds.publicKey,
         systemProgram: anchor.web3.SystemProgram.programId,
       })
