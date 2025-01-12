@@ -40,6 +40,7 @@ describe("metaloot_registry_program", () => {
         )
       )
     );
+    const testKeypair = anchor.web3.Keypair.generate();
     const entrySeeds = anchor.web3.Keypair.generate();
     const nativeTokenKeypair = anchor.web3.Keypair.generate();
     const nftCollectionKeypair = anchor.web3.Keypair.generate();
@@ -50,21 +51,21 @@ describe("metaloot_registry_program", () => {
     )[0];
     // Create the studio with full metadata
     const tx = await program.methods
-      .createGameStudio({
-        name: "Test Studio",
-        symbol: "TEST",
-        uri: "https://test-studio.com/metadata.json",
-        creator: program.provider.publicKey,
-        nativeToken: nativeTokenKeypair.publicKey,
-        nftCollection: nftCollectionKeypair.publicKey,
-      })
+      .createGameStudio(
+        "Test Studio",
+        "TEST",
+        "https://test-studio.com/metadata.json",
+        sender.publicKey,
+        nativeTokenKeypair.publicKey,
+        nftCollectionKeypair.publicKey
+      )
       .accounts({
         payer: sender.publicKey,
         pda: entry_account,
         entrySeed: entrySeeds.publicKey,
         systemProgram: anchor.web3.SystemProgram.programId,
       })
-      .signers([])
+      .signers([sender])
       .rpc();
 
     console.log("Create studio transaction signature:", tx);
@@ -79,7 +80,7 @@ describe("metaloot_registry_program", () => {
     assert.equal(entryAccount.name, "Test Studio");
     assert.equal(entryAccount.symbol, "TEST");
     assert.equal(entryAccount.uri, "https://test-studio.com/metadata.json");
-    assert.equal(entryAccount.creator.toBase58(), program.provider.publicKey.toBase58());
+    assert.equal(entryAccount.authority.toBase58(), program.provider.publicKey.toBase58());
     assert.equal(entryAccount.nativeToken.toBase58(), nativeTokenKeypair.publicKey.toBase58());
     assert.equal(entryAccount.nftCollection.toBase58(), nftCollectionKeypair.publicKey.toBase58());
   });
@@ -111,14 +112,14 @@ describe("metaloot_registry_program", () => {
 
     // First create a studio
     await program.methods
-      .createGameStudio({
-        name: "Original Studio",
-        symbol: "ORIG",
-        uri: "https://original-studio.com/metadata.json",
-        creator: program.provider.publicKey,
-        nativeToken: oldNativeToken.publicKey,
-        nftCollection: oldNftCollection.publicKey,
-      })
+      .createGameStudio(
+        "Original Studio",
+        "ORIG",
+        "https://original-studio.com/metadata.json",
+        sender.publicKey,
+        oldNativeToken.publicKey,
+        oldNftCollection.publicKey,
+      )
       .accounts({
         payer: sender.publicKey,
         pda: entry_account,
@@ -130,14 +131,14 @@ describe("metaloot_registry_program", () => {
 
     // Update the studio
     const tx = await program.methods
-      .updateGameStudio({
-        name: "Updated Studio",
-        symbol: "UPDATE",
-        uri: "https://updated-studio.com/metadata.json",
-        creator: program.provider.publicKey,
-        nativeToken: newNativeToken.publicKey,
-        nftCollection: newNftCollection.publicKey,
-      })
+      .updateGameStudio(
+        "Updated Studio",
+        "UPDATE",
+        "https://updated-studio.com/metadata.json",
+        // program.provider.publicKey, -> authority
+        newNativeToken.publicKey,
+        newNftCollection.publicKey,
+      )
       .accounts({
         payer: sender.publicKey,
         pda: entry_account,
@@ -154,7 +155,7 @@ describe("metaloot_registry_program", () => {
     assert.equal(entryAccount.name, "Updated Studio");
     assert.equal(entryAccount.symbol, "UPDATE");
     assert.equal(entryAccount.uri, "https://updated-studio.com/metadata.json");
-    assert.equal(entryAccount.creator.toBase58(), program.provider.publicKey.toBase58());
+    assert.equal(entryAccount.authority.toBase58(), program.provider.publicKey.toBase58());
     assert.equal(entryAccount.nativeToken.toBase58(), newNativeToken.publicKey.toBase58());
     assert.equal(entryAccount.nftCollection.toBase58(), newNftCollection.publicKey.toBase58());
   });
@@ -196,7 +197,7 @@ describe("metaloot_registry_program", () => {
     // Fetch and verify the created player account
     const playerAccount = await program.account.playerAccount.fetch(playerPDA);
 
-    assert.equal(playerAccount.admin.toBase58(), sender.publicKey.toBase58());
+    assert.equal(playerAccount.authority.toBase58(), sender.publicKey.toBase58());
     assert.equal(playerAccount.username, "testPlayer123");
     assert.ok(playerAccount.createdAt.toNumber() > 0);
 
@@ -241,7 +242,7 @@ describe("metaloot_registry_program", () => {
 
     // Verify the second player account
     const secondPlayerAccount = await program.account.playerAccount.fetch(newPlayerPDA);
-    assert.equal(secondPlayerAccount.admin.toBase58(), sender.publicKey.toBase58());
+    assert.equal(secondPlayerAccount.authority.toBase58(), sender.publicKey.toBase58());
     assert.equal(secondPlayerAccount.username, "differentPlayer");
     assert.ok(secondPlayerAccount.createdAt.toNumber() > 0);
   });
@@ -300,7 +301,7 @@ describe("metaloot_registry_program", () => {
     );
 
     assert.equal(playerAccount.username, "updated_username");
-    assert.equal(playerAccount.admin.toBase58(), newAdmin.publicKey.toBase58());
+    assert.equal(playerAccount.authority.toBase58(), newAdmin.publicKey.toBase58());
   });
 
   it("Can initialize player token accounts and receive tokens", async () => {

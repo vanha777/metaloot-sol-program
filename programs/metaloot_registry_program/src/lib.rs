@@ -12,10 +12,24 @@ pub mod metaloot_registry_program {
 
     pub fn create_game_studio(
         ctx: Context<CreateGameStudio>,
-        metadata: GameRegistryMetadata,
+        name: String,
+        symbol: String,
+        uri: String,
+        authority: Pubkey,
+        native_token: Pubkey,
+        nft_collection: Pubkey,
     ) -> Result<()> {
         // Store the entry data
         let entry_account = &mut ctx.accounts.pda;
+        let metadata = GameRegistryMetadata {
+            name,
+            symbol,
+            uri,
+            authority,
+            native_token,
+            nft_collection,
+            bump: ctx.bumps.pda,
+        };
         entry_account.set_inner(metadata);
         msg!(
             "Game studio created successfully with entry PDA: {}",
@@ -26,26 +40,32 @@ pub mod metaloot_registry_program {
 
     pub fn update_game_studio(
         ctx: Context<UpdateGameStudio>,
-        update_metadata: GameRegistryMetadata,
+        // update_metadata: GameRegistryMetadata,
+        name: String,
+        symbol: String,
+        uri: String,
+        // authority: Pubkey,
+        native_token: Pubkey,
+        nft_collection: Pubkey,
     ) -> Result<()> {
         let entry_account = &mut ctx.accounts.pda;
 
         // Update fields if provided
-        if !update_metadata.name.trim().is_empty() {
-            entry_account.name = update_metadata.name;
+        if !name.trim().is_empty() {
+            entry_account.name = name;
         }
-        if !update_metadata.symbol.trim().is_empty() {
-            entry_account.symbol = update_metadata.symbol;
+        if !symbol.trim().is_empty() {
+            entry_account.symbol = symbol;
         }
-        if !update_metadata.uri.trim().is_empty() {
-            entry_account.uri = update_metadata.uri;
+        if !uri.trim().is_empty() {
+            entry_account.uri = uri;
         }
-        if update_metadata.native_token != Pubkey::default() {
-            entry_account.native_token = update_metadata.native_token;
+        if native_token != Pubkey::default() {
+            entry_account.native_token = native_token;
         }
 
-        if update_metadata.nft_collection != Pubkey::default() {
-            entry_account.nft_collection = update_metadata.nft_collection;
+        if nft_collection != Pubkey::default() {
+            entry_account.nft_collection = nft_collection;
         }
 
         msg!("Game studio metadata updated successfully");
@@ -59,10 +79,10 @@ pub mod metaloot_registry_program {
         let player_account = &mut ctx.accounts.player_pda;
         let clock = Clock::get()?;
 
-        player_account.admin = ctx.accounts.payer.key();
+        player_account.authority = ctx.accounts.payer.key();
         player_account.username = username;
         player_account.created_at = clock.unix_timestamp;
-
+        player_account.bump = ctx.bumps.player_pda;
         msg!("Player account created successfully");
         Ok(())
     }
@@ -81,7 +101,7 @@ pub mod metaloot_registry_program {
 
         // Update admin if provided
         if let Some(admin) = new_admin {
-            player_account.admin = admin;
+            player_account.authority = admin;
         }
 
         msg!("Player account updated successfully");
@@ -146,17 +166,25 @@ pub struct GameRegistryMetadata {
     pub name: String,
     pub symbol: String,
     pub uri: String,
-    pub creator: Pubkey,
+    pub authority: Pubkey,
     pub native_token: Pubkey,
     pub nft_collection: Pubkey,
+    pub bump: u8,
 }
 
 #[derive(Accounts)]
-#[instruction(metadata: GameRegistryMetadata)]
+#[instruction(
+    name: String,
+    symbol: String,
+    uri: String,
+    authority: Pubkey,
+    native_token: Pubkey,
+    nft_collection: Pubkey,
+)]
 pub struct CreateGameStudio<'info> {
     #[account(
         mut,
-        constraint = payer.key() == metadata.creator @ ErrorCode::ConstraintOwner
+        constraint = payer.key() == authority @ ErrorCode::ConstraintOwner
     )]
     pub payer: Signer<'info>,
 
@@ -182,14 +210,14 @@ pub struct CreateGameStudio<'info> {
 pub struct UpdateGameStudio<'info> {
     #[account(
         mut,
-        constraint = payer.key() == pda.creator @ ErrorCode::ConstraintOwner
+        constraint = payer.key() == pda.authority @ ErrorCode::ConstraintOwner
     )]
     pub payer: Signer<'info>,
 
     #[account(
         mut,
         seeds = [b"registry", entry_seed.key().as_ref()],
-        bump,
+        bump = pda.bump,
         constraint = !pda.symbol.trim().is_empty() @ ErrorCode::ConstraintAccountIsNone
     )]
     pub pda: Account<'info, GameRegistryMetadata>,
@@ -200,9 +228,10 @@ pub struct UpdateGameStudio<'info> {
 #[account]
 #[derive(Default)]
 pub struct PlayerAccount {
-    pub admin: Pubkey,   // Player's wallet address
+    pub authority: Pubkey,   // Player's wallet address
     pub username: String, // Player's username
     pub created_at: i64,  // Timestamp of account creation
+    pub bump: u8,
 }
 
 #[derive(Accounts)]
@@ -227,7 +256,6 @@ pub struct CreatePlayerAccount<'info> {
     pub player_pda: Account<'info, PlayerAccount>,
     /// CHECK: This is safe as we're just using it as a reference for PDA seeds
     pub entry_seed: AccountInfo<'info>,
-
     pub system_program: Program<'info, System>,
 }
 
@@ -235,7 +263,7 @@ pub struct CreatePlayerAccount<'info> {
 pub struct UpdatePlayerAccount<'info> {
     #[account(
         mut,
-        constraint = payer.key() == player_pda.admin @ ErrorCode::ConstraintOwner
+        constraint = payer.key() == player_pda.authority @ ErrorCode::ConstraintOwner
     )]
     pub payer: Signer<'info>,
 
@@ -245,7 +273,7 @@ pub struct UpdatePlayerAccount<'info> {
             b"player",
             entry_seed.key().as_ref()
         ],
-        bump,
+        bump = player_pda.bump,
         constraint = player_pda.created_at != 0 @ ErrorCode::ConstraintAccountIsNone
     )]
     pub player_pda: Account<'info, PlayerAccount>,
@@ -258,7 +286,7 @@ pub struct UpdatePlayerAccount<'info> {
 pub struct InitializePlayerTokenAccounts<'info> {
     #[account(
         mut,
-        constraint = payer.key() == player_pda.admin @ ErrorCode::ConstraintOwner
+        constraint = payer.key() == player_pda.authority @ ErrorCode::ConstraintOwner
     )]
     pub payer: Signer<'info>,
     
@@ -288,7 +316,7 @@ pub struct InitializePlayerTokenAccounts<'info> {
 pub struct TransferTokens<'info> {
     #[account(
         mut,
-        constraint = payer.key() == sender_pda.admin @ ErrorCode::ConstraintOwner
+        constraint = payer.key() == sender_pda.authority @ ErrorCode::ConstraintOwner
     )]
     pub payer: Signer<'info>,
 
