@@ -90,10 +90,7 @@ pub mod metaloot_registry_program {
         Ok(())
     }
 
-    pub fn update_player_account(
-        ctx: Context<UpdatePlayerAccount>,
-        new_uri: Option<String>,
-    ) -> Result<()> {
+    pub fn update_player_account(ctx: Context<UpdatePlayerAccount>, new_uri: String) -> Result<()> {
         let player_account = &mut ctx.accounts.player_pda;
 
         // Update admin if provided
@@ -101,10 +98,7 @@ pub mod metaloot_registry_program {
         //     player_account.authority = admin;
         // }
 
-        // Update uri if provided
-        if let Some(uri) = new_uri {
-            player_account.uri = uri;
-        }
+        player_account.uri = new_uri;
 
         msg!("Player account updated successfully");
         Ok(())
