@@ -92,15 +92,9 @@ pub mod metaloot_registry_program {
 
     pub fn update_player_account(
         ctx: Context<UpdatePlayerAccount>,
-        new_username: Option<String>,
         new_uri: Option<String>,
     ) -> Result<()> {
         let player_account = &mut ctx.accounts.player_pda;
-
-        // Update username if provided
-        if let Some(username) = new_username {
-            player_account.username = username;
-        }
 
         // Update admin if provided
         // if let Some(admin) = new_admin {

@@ -284,7 +284,6 @@ describe("metaloot_registry_program", () => {
     // Update the player account
     const tx = await program.methods
       .updatePlayerAccount(
-        "updated_username",
         "https://example.com/player/updated.json"
       )
       .accounts({
@@ -304,8 +303,6 @@ describe("metaloot_registry_program", () => {
         program.programId
       )[0]
     );
-
-    assert.equal(playerAccount.username, "updated_username");
     assert.equal(playerAccount.uri, "https://example.com/player/updated.json");
   });
 
