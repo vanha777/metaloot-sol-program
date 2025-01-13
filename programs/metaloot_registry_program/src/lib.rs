@@ -1,8 +1,9 @@
 use anchor_lang::prelude::*;
-use anchor_spl::{
-    associated_token::get_associated_token_address, token::{self,Token},
-};
 use anchor_spl::associated_token::AssociatedToken;
+use anchor_spl::{
+    associated_token::get_associated_token_address,
+    token::{self, Token},
+};
 
 declare_id!("v3MbKaZSQJrwZWUz81cQ3kc8XvMsiNNxZjM3vN5BB32");
 
@@ -75,12 +76,14 @@ pub mod metaloot_registry_program {
     pub fn create_player_account(
         ctx: Context<CreatePlayerAccount>,
         username: String,
+        uri: String,
     ) -> Result<()> {
         let player_account = &mut ctx.accounts.player_pda;
         let clock = Clock::get()?;
 
         player_account.authority = ctx.accounts.payer.key();
         player_account.username = username;
+        player_account.uri = uri;
         player_account.created_at = clock.unix_timestamp;
         player_account.bump = ctx.bumps.player_pda;
         msg!("Player account created successfully");
@@ -90,7 +93,7 @@ pub mod metaloot_registry_program {
     pub fn update_player_account(
         ctx: Context<UpdatePlayerAccount>,
         new_username: Option<String>,
-        new_admin: Option<Pubkey>,
+        new_uri: Option<String>,
     ) -> Result<()> {
         let player_account = &mut ctx.accounts.player_pda;
 
@@ -100,8 +103,13 @@ pub mod metaloot_registry_program {
         }
 
         // Update admin if provided
-        if let Some(admin) = new_admin {
-            player_account.authority = admin;
+        // if let Some(admin) = new_admin {
+        //     player_account.authority = admin;
+        // }
+
+        // Update uri if provided
+        if let Some(uri) = new_uri {
+            player_account.uri = uri;
         }
 
         msg!("Player account updated successfully");
@@ -129,10 +137,7 @@ pub mod metaloot_registry_program {
         Ok(())
     }
 
-    pub fn transfer_tokens(
-        ctx: Context<TransferTokens>,
-        amount: u64,
-    ) -> Result<()> {
+    pub fn transfer_tokens(ctx: Context<TransferTokens>, amount: u64) -> Result<()> {
         let entry_seed_key = ctx.accounts.sender_seed.key();
         // Create seeds array for PDA signing
         let seeds = &[
@@ -191,11 +196,14 @@ pub struct CreateGameStudio<'info> {
     #[account(
         init,
         payer = payer,
-        space = 8 
-            + 32  // creator (Pubkey)
+        space = 8  // discriminator
             + 4 + 32  // name (String - 4 bytes for length + max 32 bytes for content)
-            + 4 + 200 // description (String - 4 bytes for length + max 200 bytes for content)
-            + 4 + 200, // uri (String - 4 bytes for length + max 200 bytes for content)
+            + 4 + 32  // symbol (String - 4 bytes for length + max 32 bytes for content)
+            + 4 + 200 // uri (String - 4 bytes for length + max 200 bytes for content)
+            + 32      // authority (Pubkey)
+            + 32      // native_token (Pubkey)
+            + 32      // nft_collection (Pubkey)
+            + 1,      // bump (u8)
         seeds = [b"registry", entry_seed.key().as_ref()],
         bump
     )]
@@ -228,14 +236,15 @@ pub struct UpdateGameStudio<'info> {
 #[account]
 #[derive(Default)]
 pub struct PlayerAccount {
-    pub authority: Pubkey,   // Player's wallet address
-    pub username: String, // Player's username
-    pub created_at: i64,  // Timestamp of account creation
+    pub authority: Pubkey, // Authority wallet address
+    pub username: String,  // Player's username
+    pub created_at: i64,   // Timestamp of account creation
+    pub uri: String,
     pub bump: u8,
 }
 
 #[derive(Accounts)]
-#[instruction(username: String)]
+#[instruction(username: String, uri: String)]
 pub struct CreatePlayerAccount<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,
@@ -244,9 +253,11 @@ pub struct CreatePlayerAccount<'info> {
         init,
         payer = payer,
         space = 8 + // discriminator
-               32 + // player (Pubkey)
+               32 + // authority (Pubkey)
                4 + 64 + // username (String: 4 bytes for length + max 64 bytes for content)
-               8,  // created_at (i64)
+               8 + // created_at (i64)
+               4 + 200 + // uri (String: 4 bytes for length + max 200 bytes for content)
+               1,  // bump (u8)
         seeds = [
             b"player",
             entry_seed.key().as_ref()
@@ -289,7 +300,7 @@ pub struct InitializePlayerTokenAccounts<'info> {
         constraint = payer.key() == player_pda.authority @ ErrorCode::ConstraintOwner
     )]
     pub payer: Signer<'info>,
-    
+
     /// CHECK: This is the token mint address
     pub token_mint: AccountInfo<'info>,
 
@@ -299,7 +310,7 @@ pub struct InitializePlayerTokenAccounts<'info> {
         constraint = player_pda.created_at != 0 @ ErrorCode::ConstraintAccountIsNone
     )]
     pub player_pda: Account<'info, PlayerAccount>,
-    
+
     /// CHECK: This is the player's token account
     #[account(mut)]
     pub player_token_account: UncheckedAccount<'info>,
@@ -320,10 +331,9 @@ pub struct TransferTokens<'info> {
     )]
     pub payer: Signer<'info>,
 
-        
     /// CHECK: This is the token mint address
     pub token_mint: AccountInfo<'info>,
-    
+
     /// CHECK: This is safe as we're just using it as a reference for PDA seeds
     pub sender_seed: AccountInfo<'info>,
 
@@ -362,5 +372,3 @@ pub struct TransferTokens<'info> {
 
     pub token_program: Program<'info, Token>,
 }
-
-

@@ -176,7 +176,10 @@ describe("metaloot_registry_program", () => {
 
     // Create a player account
     const tx = await program.methods
-      .createPlayerAccount("testPlayer123")
+      .createPlayerAccount(
+        "testPlayer123",
+        "https://example.com/player/metadata.json"
+      )
       .accounts({
         entrySeed: entrySeed.publicKey,
         systemProgram: anchor.web3.SystemProgram.programId,
@@ -192,11 +195,15 @@ describe("metaloot_registry_program", () => {
     assert.equal(playerAccount.authority.toBase58(), sender.publicKey.toBase58());
     assert.equal(playerAccount.username, "testPlayer123");
     assert.ok(playerAccount.createdAt.toNumber() > 0);
+    assert.equal(playerAccount.uri, "https://example.com/player/metadata.json");
 
     // Try to create another player account with the same seed (should fail)
     try {
       await program.methods
-        .createPlayerAccount("anotherPlayer")
+        .createPlayerAccount(
+          "anotherPlayer",
+          "https://example.com/player/another.json"
+        )
         .accounts({
           playerAccount: playerPDA,
           entrySeed: entrySeed.publicKey,
@@ -219,7 +226,10 @@ describe("metaloot_registry_program", () => {
     )[0];
 
     const tx2 = await program.methods
-      .createPlayerAccount("differentPlayer")
+      .createPlayerAccount(
+        "differentPlayer",
+        "https://example.com/player/different.json"
+      )
       .accounts({
         entrySeed: newEntrySeed.publicKey,
         systemProgram: anchor.web3.SystemProgram.programId,
@@ -234,9 +244,10 @@ describe("metaloot_registry_program", () => {
     assert.equal(secondPlayerAccount.authority.toBase58(), sender.publicKey.toBase58());
     assert.equal(secondPlayerAccount.username, "differentPlayer");
     assert.ok(secondPlayerAccount.createdAt.toNumber() > 0);
+    assert.equal(secondPlayerAccount.uri, "https://example.com/player/different.json");
   });
 
-  it("Can update a player account's username and admin", async () => {
+  it("Can update a player account's username and uri", async () => {
     // Generate keypairs for required accounts
     const sender = anchor.web3.Keypair.fromSecretKey(
       Uint8Array.from(
@@ -249,7 +260,6 @@ describe("metaloot_registry_program", () => {
       )
     );
     const entrySeeds = anchor.web3.Keypair.generate();
-    const newAdmin = anchor.web3.Keypair.generate();
 
     const player_account = anchor.web3.PublicKey.findProgramAddressSync(
       [Buffer.from("player"), entrySeeds.publicKey.toBuffer()],
@@ -258,8 +268,13 @@ describe("metaloot_registry_program", () => {
 
     // First create a player account
     await program.methods
-      .createPlayerAccount("initial_username")
+      .createPlayerAccount(
+        "initial_username",
+        "https://example.com/player/initial.json"
+      )
       .accounts({
+        payer: sender.publicKey,
+        playerPda: player_account,
         entrySeed: entrySeeds.publicKey,
         systemProgram: anchor.web3.SystemProgram.programId,
       })
@@ -268,8 +283,13 @@ describe("metaloot_registry_program", () => {
 
     // Update the player account
     const tx = await program.methods
-      .updatePlayerAccount("updated_username", newAdmin.publicKey)
+      .updatePlayerAccount(
+        "updated_username",
+        "https://example.com/player/updated.json"
+      )
       .accounts({
+        payer: sender.publicKey,
+        playerPda: player_account,
         entrySeed: entrySeeds.publicKey,
       })
       .signers([sender])
@@ -286,7 +306,7 @@ describe("metaloot_registry_program", () => {
     );
 
     assert.equal(playerAccount.username, "updated_username");
-    assert.equal(playerAccount.authority.toBase58(), newAdmin.publicKey.toBase58());
+    assert.equal(playerAccount.uri, "https://example.com/player/updated.json");
   });
 
   it("Can initialize player token accounts and receive tokens", async () => {
@@ -346,7 +366,7 @@ describe("metaloot_registry_program", () => {
 
     // Create player account first
     await program.methods
-      .createPlayerAccount("testPlayer123")
+      .createPlayerAccount("testPlayer123","https://example.com/player/initial.json")
       .accounts({
         entrySeed: entrySeeds.publicKey,
         systemProgram: anchor.web3.SystemProgram.programId,
@@ -435,7 +455,7 @@ describe("metaloot_registry_program", () => {
 
     // Create player accounts
     await program.methods
-      .createPlayerAccount("player1")
+      .createPlayerAccount("player1","https://example.com/player/initial.json")
       .accounts({
         entrySeed: player1Seeds.publicKey,
         systemProgram: anchor.web3.SystemProgram.programId,
@@ -444,7 +464,7 @@ describe("metaloot_registry_program", () => {
       .rpc();
 
     await program.methods
-      .createPlayerAccount("player2")
+      .createPlayerAccount("player2","https://example.com/player/initial.json")
       .accounts({
         entrySeed: player2Seeds.publicKey,
         systemProgram: anchor.web3.SystemProgram.programId,
