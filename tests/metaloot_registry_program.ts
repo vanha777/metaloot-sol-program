@@ -3,7 +3,7 @@ import { Program } from "@coral-xyz/anchor";
 import { MetalootRegistryProgram } from "../target/types/metaloot_registry_program";
 import { assert } from "chai";
 import { PublicKey } from "@solana/web3.js";
-import { ASSOCIATED_TOKEN_PROGRAM_ID, createAccount, createMint, getAccount, getAssociatedTokenAddress, getMint, mintTo, TOKEN_PROGRAM_ID, transfer } from "@solana/spl-token";
+import { ASSOCIATED_TOKEN_PROGRAM_ID, createAccount, createMint, getAccount, getAssociatedTokenAddress, getMint, mintTo, TOKEN_PROGRAM_ID, transfer, getOrCreateAssociatedTokenAccount } from "@solana/spl-token";
 
 describe("metaloot_registry_program", () => {
   const TOKEN_METADATA_PROGRAM_ID = new PublicKey('metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s');
@@ -363,7 +363,7 @@ describe("metaloot_registry_program", () => {
 
     // Create player account first
     await program.methods
-      .createPlayerAccount("testPlayer123","https://example.com/player/initial.json")
+      .createPlayerAccount("testPlayer123", "https://example.com/player/initial.json")
       .accounts({
         entrySeed: entrySeeds.publicKey,
         systemProgram: anchor.web3.SystemProgram.programId,
@@ -452,7 +452,7 @@ describe("metaloot_registry_program", () => {
 
     // Create player accounts
     await program.methods
-      .createPlayerAccount("player1","https://example.com/player/initial.json")
+      .createPlayerAccount("player1", "https://example.com/player/initial.json")
       .accounts({
         entrySeed: player1Seeds.publicKey,
         systemProgram: anchor.web3.SystemProgram.programId,
@@ -461,7 +461,7 @@ describe("metaloot_registry_program", () => {
       .rpc();
 
     await program.methods
-      .createPlayerAccount("player2","https://example.com/player/initial.json")
+      .createPlayerAccount("player2", "https://example.com/player/initial.json")
       .accounts({
         entrySeed: player2Seeds.publicKey,
         systemProgram: anchor.web3.SystemProgram.programId,
@@ -545,6 +545,129 @@ describe("metaloot_registry_program", () => {
 
     assert.equal(Number(player1TokenAccount.amount), 500 * 1e9);
     assert.equal(Number(player2TokenAccount.amount), 500 * 1e9);
+  });
+
+  it("Can reward tokens from registry to player", async () => {
+    // Generate test accounts
+    const sender = anchor.web3.Keypair.fromSecretKey(
+      Uint8Array.from(JSON.parse(require('fs').readFileSync(
+        require('os').homedir() + '/metaloot-keypair.json', 'utf-8'
+      )))
+    );
+    const registrySeeds = anchor.web3.Keypair.generate();
+    const playerSeeds = anchor.web3.Keypair.generate();
+
+    const nativeTokenKeypair = anchor.web3.Keypair.generate();
+    const nftCollectionKeypair = anchor.web3.Keypair.generate();
+
+    // Find PDAs
+    const registry_pda = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("registry"), registrySeeds.publicKey.toBuffer()],
+      program.programId
+    )[0];
+    const player_pda = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("player"), playerSeeds.publicKey.toBuffer()],
+      program.programId
+    )[0];
+
+    // Create game studio (registry) first
+    await program.methods
+      .createGameStudio(
+        "Test Studio",
+        "TEST",
+        "https://test-studio.com/metadata.json",
+        sender.publicKey,
+        nativeTokenKeypair.publicKey,
+        nftCollectionKeypair.publicKey
+      )
+      .accounts({
+        entrySeed: registrySeeds.publicKey,
+        systemProgram: anchor.web3.SystemProgram.programId,
+      })
+      .signers([sender])
+      .rpc();
+
+    // Create token mint with registry PDA as mint authority
+    const tokenMint = await createMint(
+      program.provider.connection,
+      sender,
+      sender.publicKey,
+      sender.publicKey,
+      9
+    );
+
+    // Create player account
+    await program.methods
+      .createPlayerAccount("player1", "https://example.com/player.json")
+      .accounts({
+        entrySeed: playerSeeds.publicKey,
+        systemProgram: anchor.web3.SystemProgram.programId,
+      })
+      .signers([sender])
+      .rpc();
+
+    // Create ATAs directly without going through program
+    const registryTokenATA = await getOrCreateAssociatedTokenAccount(
+      program.provider.connection,
+      sender,                // payer
+      tokenMint,
+      registry_pda,         // owner
+      true                  // allowOwnerOffCurve
+    );
+
+    const playerTokenATA = await getOrCreateAssociatedTokenAccount(
+      program.provider.connection,
+      sender,               // payer
+      tokenMint,
+      player_pda,          // owner
+      true                 // allowOwnerOffCurve
+    );
+
+    let playerATA = playerTokenATA.address;
+    let registryATA = registryTokenATA.address;
+
+    // Mint initial tokens to registry directly using SPL Token program
+    await mintTo(
+      program.provider.connection,
+      sender,
+      tokenMint,
+      registryTokenATA.address,  // use .address if getOrCreateAssociatedTokenAccount was used
+      sender.publicKey,
+      1000 * 1e9
+    );
+
+    // Reward tokens to player
+    const rewardAmount = 100 * 1e9;
+    const rewardTx = await program.methods
+      .rewardTokens(new anchor.BN(rewardAmount))
+      .accounts({
+        payer: sender.publicKey,
+        tokenMint: tokenMint,
+        senderSeed: registrySeeds.publicKey,
+        senderPda: registry_pda,
+        senderTokenAccount: registryATA,
+        recipientSeed: playerSeeds.publicKey,
+        recipientPda: player_pda,
+        recipientTokenAccount: playerATA,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      })
+      .signers([sender])
+      .rpc();
+
+    console.log("Reward tokens transaction signature:", rewardTx);
+
+    // Verify balances
+    const registryTokenAccount = await getAccount(
+      program.provider.connection,
+      registryATA
+    );
+    const playerTokenAccount = await getAccount(
+      program.provider.connection,
+      playerATA
+    );
+
+    assert.equal(Number(registryTokenAccount.amount), 900 * 1e9); // Initial - reward
+    assert.equal(Number(playerTokenAccount.amount), 100 * 1e9); // Received amount
   });
 
 });

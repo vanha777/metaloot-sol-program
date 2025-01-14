@@ -151,6 +151,33 @@ pub mod metaloot_registry_program {
         msg!("Transferred {} tokens successfully", amount);
         Ok(())
     }
+
+    pub fn reward_tokens(ctx: Context<RewardTokens>, amount: u64) -> Result<()> {
+        let entry_seed_key = ctx.accounts.sender_seed.key();
+        // Create seeds array for PDA signing
+        let seeds = &[
+            b"registry",
+            entry_seed_key.as_ref(),
+            &[ctx.accounts.sender_pda.bump],
+        ];
+        let signer_seeds = &[&seeds[..]];
+
+        // Execute transfer with PDA as signing authority
+        token::transfer(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                token::Transfer {
+                    from: ctx.accounts.sender_token_account.to_account_info(),
+                    to: ctx.accounts.recipient_token_account.to_account_info(),
+                    authority: ctx.accounts.sender_pda.to_account_info(),
+                },
+                signer_seeds,
+            ),
+            amount,
+        )?;
+        msg!("Transferred {} tokens successfully", amount);
+        Ok(())
+    }
 }
 
 #[account]
@@ -360,3 +387,54 @@ pub struct TransferTokens<'info> {
 
     pub token_program: Program<'info, Token>,
 }
+
+#[derive(Accounts)]
+pub struct RewardTokens<'info> {
+    #[account(
+        mut,
+        constraint = payer.key() == sender_pda.authority @ ErrorCode::ConstraintOwner
+    )]
+    pub payer: Signer<'info>,
+
+    /// CHECK: This is the token mint address
+    pub token_mint: AccountInfo<'info>,
+
+    /// CHECK: This is safe as we're just using it as a reference for PDA seeds
+    pub sender_seed: AccountInfo<'info>,
+
+    #[account(
+        seeds = [b"registry", sender_seed.key().as_ref()],
+        bump = sender_pda.bump,
+        constraint = !sender_pda.name.is_empty() @ ErrorCode::ConstraintAccountIsNone
+    )]
+    pub sender_pda: Account<'info, GameRegistryMetadata>,
+
+    /// CHECK: Account validated by token program
+    #[account(
+        mut,
+        constraint = sender_token_account.owner == &token_program.key() @ ErrorCode::ConstraintAssociatedTokenTokenProgram,
+        constraint = sender_token_account.key() == get_associated_token_address(&sender_pda.key(), &token_mint.key()) @ ErrorCode::ConstraintAssociatedTokenTokenProgram
+    )]
+    pub sender_token_account: UncheckedAccount<'info>,
+
+    /// CHECK: This is safe as we're just using it as a reference for PDA seeds
+    pub recipient_seed: AccountInfo<'info>,
+
+    #[account(
+        seeds = [b"player", recipient_seed.key().as_ref()],
+        bump = recipient_pda.bump,
+        constraint = recipient_pda.created_at != 0 @ ErrorCode::ConstraintAccountIsNone
+    )]
+    pub recipient_pda: Account<'info, PlayerAccount>,
+
+    /// CHECK: Account validated by token program
+    #[account(
+        mut,
+        constraint = recipient_token_account.owner == &token_program.key() @ ErrorCode::ConstraintAssociatedTokenTokenProgram,
+        constraint = recipient_token_account.key() == get_associated_token_address(&recipient_pda.key(), &token_mint.key()) @ ErrorCode::ConstraintAssociatedTokenTokenProgram
+    )]
+    pub recipient_token_account: UncheckedAccount<'info>,
+
+    pub token_program: Program<'info, Token>,
+}
+
