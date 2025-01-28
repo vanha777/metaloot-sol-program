@@ -57,7 +57,7 @@ describe("metaloot_registry_program", () => {
         "https://test-studio.com/metadata.json",
         sender.publicKey,
         nativeTokenKeypair.publicKey,
-        nftCollectionKeypair.publicKey
+        [nftCollectionKeypair.publicKey]
       )
       .accounts({
         entrySeed: entrySeeds.publicKey,
@@ -80,7 +80,11 @@ describe("metaloot_registry_program", () => {
     assert.equal(entryAccount.uri, "https://test-studio.com/metadata.json");
     assert.equal(entryAccount.authority.toBase58(), program.provider.publicKey.toBase58());
     assert.equal(entryAccount.nativeToken.toBase58(), nativeTokenKeypair.publicKey.toBase58());
-    assert.equal(entryAccount.nftCollection.toBase58(), nftCollectionKeypair.publicKey.toBase58());
+    // Fix: Compare arrays of Base58 strings
+    assert.deepEqual(
+      entryAccount.nftCollection.map(key => key.toBase58()),
+      [nftCollectionKeypair.publicKey.toBase58()]
+    );
   });
 
   it("Can update a studio's metadata", async () => {
@@ -116,7 +120,7 @@ describe("metaloot_registry_program", () => {
         "https://original-studio.com/metadata.json",
         sender.publicKey,
         oldNativeToken.publicKey,
-        oldNftCollection.publicKey,
+        [oldNftCollection.publicKey],
       )
       .accounts({
         entrySeed: entrySeeds.publicKey,
@@ -133,7 +137,7 @@ describe("metaloot_registry_program", () => {
         "https://updated-studio.com/metadata.json",
         // program.provider.publicKey, -> authority
         newNativeToken.publicKey,
-        newNftCollection.publicKey,
+        [newNftCollection.publicKey],
       )
       .accounts({
         entrySeed: entrySeeds.publicKey,
@@ -151,7 +155,11 @@ describe("metaloot_registry_program", () => {
     assert.equal(entryAccount.uri, "https://updated-studio.com/metadata.json");
     assert.equal(entryAccount.authority.toBase58(), program.provider.publicKey.toBase58());
     assert.equal(entryAccount.nativeToken.toBase58(), newNativeToken.publicKey.toBase58());
-    assert.equal(entryAccount.nftCollection.toBase58(), newNftCollection.publicKey.toBase58());
+    // Fix: Compare arrays of Base58 strings
+    assert.deepEqual(
+      entryAccount.nftCollection.map(key => key.toBase58()),
+      [newNftCollection.publicKey.toBase58()]
+    );
   });
 
   it("Can create and verify a player account", async () => {
@@ -578,7 +586,7 @@ describe("metaloot_registry_program", () => {
         "https://test-studio.com/metadata.json",
         sender.publicKey,
         nativeTokenKeypair.publicKey,
-        nftCollectionKeypair.publicKey
+        [nftCollectionKeypair.publicKey]
       )
       .accounts({
         entrySeed: registrySeeds.publicKey,

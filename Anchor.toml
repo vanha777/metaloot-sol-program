@@ -9,13 +9,13 @@ metaloot_registry_program = "v3MbKaZSQJrwZWUz81cQ3kc8XvMsiNNxZjM3vN5BB32"
 
 [programs.devnet]
 metaloot_registry_program = "v3MbKaZSQJrwZWUz81cQ3kc8XvMsiNNxZjM3vN5BB32"
-upgradeable = true
 
 [registry]
 url = "https://api.apr.dev"
 
 [provider]
 cluster = "Devnet"
+# cluster = "localnet"
 wallet = "~/metaloot-keypair.json"
 
 [test]

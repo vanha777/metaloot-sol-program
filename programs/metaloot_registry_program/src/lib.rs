@@ -18,7 +18,7 @@ pub mod metaloot_registry_program {
         uri: String,
         authority: Pubkey,
         native_token: Pubkey,
-        nft_collection: Pubkey,
+        nft_collection: Vec<Pubkey>,
     ) -> Result<()> {
         // Store the entry data
         let entry_account = &mut ctx.accounts.pda;
@@ -47,7 +47,7 @@ pub mod metaloot_registry_program {
         uri: String,
         // authority: Pubkey,
         native_token: Pubkey,
-        nft_collection: Pubkey,
+        nft_collection: Vec<Pubkey>,
     ) -> Result<()> {
         let entry_account = &mut ctx.accounts.pda;
 
@@ -65,9 +65,11 @@ pub mod metaloot_registry_program {
             entry_account.native_token = native_token;
         }
 
-        if nft_collection != Pubkey::default() {
-            entry_account.nft_collection = nft_collection;
-        }
+        // if nft_collection != Pubkey::default() {
+        //     entry_account.nft_collection = nft_collection;
+        // }
+
+        entry_account.nft_collection = nft_collection;
 
         msg!("Game studio metadata updated successfully");
         Ok(())
@@ -188,7 +190,7 @@ pub struct GameRegistryMetadata {
     pub uri: String,
     pub authority: Pubkey,
     pub native_token: Pubkey,
-    pub nft_collection: Pubkey,
+    pub nft_collection: Vec<Pubkey>,
     pub bump: u8,
 }
 
@@ -217,7 +219,7 @@ pub struct CreateGameStudio<'info> {
             + 4 + 200 // uri (String - 4 bytes for length + max 200 bytes for content)
             + 32      // authority (Pubkey)
             + 32      // native_token (Pubkey)
-            + 32      // nft_collection (Pubkey)
+            + 4 + (32 * 5) // nft_collection (Vec<Pubkey> - 4 bytes for length + space for 5 Pubkeys) -- before 32 for single Pubkey
             + 1,      // bump (u8)
         seeds = [b"registry", entry_seed.key().as_ref()],
         bump
@@ -437,4 +439,3 @@ pub struct RewardTokens<'info> {
 
     pub token_program: Program<'info, Token>,
 }
-
