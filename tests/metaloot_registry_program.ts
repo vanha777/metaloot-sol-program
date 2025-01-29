@@ -75,6 +75,8 @@ describe("metaloot_registry_program", () => {
         program.programId
       )[0]
     );
+    let test = entryAccount.nftCollection.map(key => key.toBase58());
+    console.log("Created studio :", test);
     assert.equal(entryAccount.name, "Test Studio");
     assert.equal(entryAccount.symbol, "TEST");
     assert.equal(entryAccount.uri, "https://test-studio.com/metadata.json");

@@ -201,7 +201,7 @@ pub struct GameRegistryMetadata {
     uri: String,
     authority: Pubkey,
     native_token: Pubkey,
-    nft_collection: Pubkey,
+    nft_collection: Vec<Pubkey>,
 )]
 pub struct CreateGameStudio<'info> {
     #[account(
